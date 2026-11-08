@@ -1,0 +1,14 @@
+# 全仓库统一 LF：固件在 WSL/ESP-IDF 下构建，脚本里的 shebang 与 set -o pipefail
+# 一旦带 CRLF 会直接报 "invalid option name"。Windows 侧 clone 时也不要再用
+# core.autocrlf=true。
+* text=auto eol=lf
+
+*.bin binary
+*.gz binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+
+*.bat text eol=crlf
+*.cmd text eol=crlf

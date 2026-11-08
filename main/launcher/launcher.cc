@@ -137,9 +137,39 @@ void draw_icon_accents(lv_event_t *event) {
     }
 }
 
-void draw_app_icon(passport_app_id_t id, uint32_t color) {
-    const uint32_t detail = ui_theme_is_multicolor() ? UI_SECONDARY : color;
-    const uint32_t warm = ui_theme_is_multicolor() ? UI_TERTIARY : color;
+// 应用抽屉的彩色图标配色。图标从此不再跟随主题单色，而是每个应用一套
+// 主色/辅色/点缀色（参考 1944 的彩色应用主图）；主题仍决定底、字与选中框。
+struct IconPalette {
+    uint32_t primary;
+    uint32_t detail;
+    uint32_t warm;
+};
+
+IconPalette icon_palette_for(passport_app_id_t id) {
+    switch (id) {
+        case APP_ID_HOME: return {0xDDB36C, 0x8C6B33, 0xF2CA6D};
+        case APP_ID_RADIO: return {0xFFB74D, 0x8A5A1E, 0xFFE3AE};
+        case APP_ID_VOICE: return {0x4ED39A, 0x1F7A58, 0xB9F5DA};
+        case APP_ID_XIAOZHI: return {0x38BDF8, 0x1D6FA8, 0xE9F6FF};
+        case APP_ID_MUSE: return {0x8DA7B0, 0x4A5F68, 0xDCE7EA};
+        case APP_ID_GAME: return {0xEEA438, 0x8F5B13, 0xFFD98A};
+        case APP_ID_SOUND_JUMP: return {0xE8C547, 0x8A6E10, 0xFFF3B8};
+        case APP_ID_TETRIS: return {0xE05C6E, 0x2E8BC0, 0xE9C46A};
+        case APP_ID_STOPWATCH: return {0xDDB36C, 0x7C5A20, 0xF6E0B0};
+        case APP_ID_POMODORO: return {0xE2554F, 0x2F8F5B, 0xF7B267};
+        case APP_ID_SETTINGS: return {0x9AA6B2, 0xA5315B, 0xDDE3EA};
+        case APP_ID_WEATHER: return {0x3B82C4, 0x2A5C8F, 0xF7C948};
+        default: return {0x8FB8A8, 0x4E7468, 0xD6E7DF};
+    }
+}
+
+void draw_app_icon(passport_app_id_t id, uint32_t theme_color) {
+    // 彩色图标：几何形状不变，颜色改由每个应用自己的配色表决定。
+    (void)theme_color;
+    const IconPalette palette = icon_palette_for(id);
+    const uint32_t color = palette.primary;
+    const uint32_t detail = palette.detail;
+    const uint32_t warm = palette.warm;
     lv_obj_invalidate(s_icon);
     for (lv_obj_t *part : s_icon_parts) lv_obj_add_flag(part, LV_OBJ_FLAG_HIDDEN);
 
@@ -262,6 +292,18 @@ void draw_app_icon(passport_app_id_t id, uint32_t color) {
             set_part(7, 48, 34, 10, 10, color);
             set_part(8, 58, 34, 10, 10, color);
             set_part(9, 40, 58, 38, 10, color);       // I 长条
+            break;
+        case APP_ID_WEATHER:
+            // 天气:太阳 + 云 + 三滴雨(与天气应用内的图形同一套配色)
+            set_part(0, 52, 14, 16, 16, warm);      // 太阳
+            set_part(1, 46, 20, 4, 4, warm);        // 左侧光
+            set_part(2, 58, 8, 4, 4, warm);         // 顶部光
+            set_part(3, 22, 30, 30, 12, color);     // 云顶
+            set_part(4, 12, 40, 56, 14, color);     // 云身
+            set_part(5, 54, 34, 16, 10, color);     // 云右
+            set_part(6, 24, 58, 6, 14, detail);     // 雨
+            set_part(7, 40, 58, 6, 14, detail);
+            set_part(8, 56, 58, 6, 14, detail);
             break;
         default:
             break;

@@ -1,6 +1,7 @@
 #include "apps/home/home_weather.h"
 #include "apps/home/home_profile.h"
 #include "apps/voice/time_sync.h"
+#include "ui/ui_appearance.h"
 
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
@@ -12,6 +13,7 @@
 #include "esp_timer.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <time.h>
@@ -19,7 +21,9 @@
 static const char *TAG = "home_weather";
 
 #define NVS_NAMESPACE "home_profile"
-#define RESPONSE_MAX 1024 /* forecast?current= 响应 < 500B,留余量 */
+// current + hourly(24h) + daily(4d) 实测约 2.4 KB。缓冲区放静态区而不是
+// 任务栈：首页任务栈只有 4 KB，4 KB 的栈上数组会直接溢出。
+#define RESPONSE_MAX 4096
 #define HTTP_TIMEOUT_MS 15000
 #define EPOCH_VALID_MIN 1700000000LL /* 与 home_clock 一致:早于此视为未校时 */
 
@@ -30,6 +34,7 @@ static char s_lat[HOME_COORD_MAX], s_lon[HOME_COORD_MAX];
 static home_air_quality_t s_air;
 static int64_t s_air_updated_us;
 static char s_air_lat[HOME_COORD_MAX], s_air_lon[HOME_COORD_MAX];
+static home_forecast_t s_forecast;
 static bool s_requests_cancelled;
 
 void home_weather_allow_requests(void) {
@@ -211,6 +216,117 @@ static void apply_utc_offset(const cJSON *root) {
     time_sync_set_tz_offset_min(seconds / 60);
 }
 
+// "2026-11-09T06:23" -> 本地分钟；格式不符返回 -1。hourly 的
+// "2026-11-09T14:00" 同样适用（分钟为 00）。
+static int parse_iso_minutes(const char *text)
+{
+    if (!text) return -1;
+    const char *t = strchr(text, 'T');
+    if (!t || t[3] != ':') return -1;
+    for (int i = 1; i <= 5; ++i) {
+        if (i == 3) continue;
+        if (t[i] < '0' || t[i] > '9') return -1;
+    }
+    const int hour = (t[1] - '0') * 10 + (t[2] - '0');
+    const int minute = (t[4] - '0') * 10 + (t[5] - '0');
+    if (hour > 23 || minute > 59) return -1;
+    return hour * 60 + minute;
+}
+
+static double json_number(const cJSON *obj, double fallback)
+{
+    return cJSON_IsNumber(obj) && isfinite(obj->valuedouble) ? obj->valuedouble : fallback;
+}
+
+static int round_int(double value) { return value >= 0 ? (int)(value + 0.5) : (int)(value - 0.5); }
+
+static int8_t clamp_i8(int value)
+{
+    if (value > 127) return 127;
+    if (value < -128) return -128;
+    return (int8_t)value;
+}
+
+// 解析 hourly(24h)/daily(4d)，并把日出日落交给亮暗自动模式。
+// 字段缺失时逐项跳过，不让一条坏数据毁掉整份预报。
+static void parse_forecast(const cJSON *root)
+{
+    home_forecast_t next = {0};
+    const cJSON *hourly = cJSON_GetObjectItemCaseSensitive(root, "hourly");
+    const cJSON *times = cJSON_GetObjectItemCaseSensitive(hourly, "time");
+    const cJSON *temps = cJSON_GetObjectItemCaseSensitive(hourly, "temperature_2m");
+    const cJSON *codes = cJSON_GetObjectItemCaseSensitive(hourly, "weather_code");
+    const cJSON *precips = cJSON_GetObjectItemCaseSensitive(hourly, "precipitation_probability");
+    const int hour_total = cJSON_GetArraySize(times);
+    for (int i = 0; i < hour_total && next.hour_count < HOME_FORECAST_HOURS; ++i) {
+        const cJSON *time = cJSON_GetArrayItem(times, i);
+        if (!cJSON_IsString(time)) continue;
+        const int minutes = parse_iso_minutes(time->valuestring);
+        if (minutes < 0) continue;
+        home_forecast_hour_t *hour = &next.hours[next.hour_count++];
+        hour->hour = (uint8_t)(minutes / 60);
+        hour->temp_c = clamp_i8(round_int(json_number(cJSON_GetArrayItem(temps, i), 0)));
+        hour->code = (uint16_t)json_number(cJSON_GetArrayItem(codes, i), 0);
+        hour->precip_pct = (uint8_t)json_number(cJSON_GetArrayItem(precips, i), 0);
+    }
+
+    const cJSON *daily = cJSON_GetObjectItemCaseSensitive(root, "daily");
+    const cJSON *days = cJSON_GetObjectItemCaseSensitive(daily, "time");
+    const cJSON *day_codes = cJSON_GetObjectItemCaseSensitive(daily, "weather_code");
+    const cJSON *day_max = cJSON_GetObjectItemCaseSensitive(daily, "temperature_2m_max");
+    const cJSON *day_min = cJSON_GetObjectItemCaseSensitive(daily, "temperature_2m_min");
+    const cJSON *day_precip = cJSON_GetObjectItemCaseSensitive(daily, "precipitation_hours");
+    const cJSON *rises = cJSON_GetObjectItemCaseSensitive(daily, "sunrise");
+    const cJSON *sets = cJSON_GetObjectItemCaseSensitive(daily, "sunset");
+    const int day_total = cJSON_GetArraySize(days);
+    for (int i = 0; i < day_total && next.day_count < HOME_FORECAST_DAYS; ++i) {
+        home_forecast_day_t *day = &next.days[next.day_count++];
+        day->tmax_c = clamp_i8(round_int(json_number(cJSON_GetArrayItem(day_max, i), 0)));
+        day->tmin_c = clamp_i8(round_int(json_number(cJSON_GetArrayItem(day_min, i), 0)));
+        day->code = (uint16_t)json_number(cJSON_GetArrayItem(day_codes, i), 0);
+        const int precip_hours = round_int(json_number(cJSON_GetArrayItem(day_precip, i), 0));
+        day->precip_h = (uint8_t)(precip_hours < 0 ? 0 : (precip_hours > 24 ? 24 : precip_hours));
+        const cJSON *rise = cJSON_GetArrayItem(rises, i);
+        const cJSON *set = cJSON_GetArrayItem(sets, i);
+        if (cJSON_IsString(rise) && cJSON_IsString(set)) {
+            const int rise_min = parse_iso_minutes(rise->valuestring);
+            const int set_min = parse_iso_minutes(set->valuestring);
+            if (rise_min >= 0 && set_min >= 0 && rise_min != set_min) {
+                day->sunrise_min = (uint16_t)rise_min;
+                day->sunset_min = (uint16_t)set_min;
+            }
+        }
+    }
+
+    if (next.day_count && next.days[0].sunrise_min && next.days[0].sunset_min) {
+        next.sun_valid = true;
+        next.sunrise_min = next.days[0].sunrise_min;
+        next.sunset_min = next.days[0].sunset_min;
+    }
+    next.valid = next.hour_count > 0 || next.day_count > 0;
+    const time_t now = time(NULL);
+    next.updated_at = now >= EPOCH_VALID_MIN ? (uint32_t)now : 0;
+    portENTER_CRITICAL(&s_weather_mux);
+    s_forecast = next;
+    portEXIT_CRITICAL(&s_weather_mux);
+    ui_appearance_set_sun_times(next.sun_valid, next.sunrise_min, next.sunset_min);
+    ESP_LOGI(TAG, "Forecast hours=%u days=%u sun=%u..%u", (unsigned)next.hour_count,
+             (unsigned)next.day_count, (unsigned)next.sunrise_min, (unsigned)next.sunset_min);
+}
+
+bool home_weather_forecast_get(home_forecast_t *out)
+{
+    if (!out) return false;
+    home_profile_t profile;
+    home_profile_get(&profile);
+    portENTER_CRITICAL(&s_weather_mux);
+    *out = s_forecast;
+    out->valid = s_forecast.valid && s_lat[0] && s_lon[0] &&
+                 !strcmp(profile.lat, s_lat) && !strcmp(profile.lon, s_lon);
+    portEXIT_CRITICAL(&s_weather_mux);
+    return out->valid;
+}
+
 // Open-Meteo current 响应形如
 // {"latitude":39.9,"current_units":{...},"current":{"time":"...","temperature_2m":26.1,"weather_code":2,...}}
 static esp_err_t weather_parse(const char *body, const char *lat, const char *lon) {
@@ -262,6 +378,7 @@ static esp_err_t weather_parse(const char *body, const char *lat, const char *lo
     } else {
         ESP_LOGW(TAG, "Weather JSON missing fields");
     }
+    parse_forecast(root);
     cJSON_Delete(root);
     return err;
 }
@@ -294,10 +411,16 @@ static esp_err_t receive_current(esp_http_client_event_t *event) {
 }
 
 // One bounded response buffer and HTTP client at a time for weather and PM2.5.
+// 4 KB 不进 .bss：静态区直接吃掉首块连续堆，而 verify_firmware 的首堆下限
+// 是 72 KB。改成每次请求 malloc、解析完立刻 free，只在拉取期间占用堆。
 static esp_err_t fetch_current(const char *url, const char *lat, const char *lon,
                                current_parser_t parser) {
     if (requests_cancelled()) return ESP_FAIL;
-    current_response_t response = {0};
+    current_response_t *response = (current_response_t *)calloc(1, sizeof(*response));
+    if (!response) {
+        ESP_LOGW(TAG, "Weather response buffer allocation failed");
+        return ESP_FAIL;
+    }
     esp_http_client_config_t config = {
         .url = url,
         .timeout_ms = 2000, /* connection poll; shortened to 500ms after TLS */
@@ -305,46 +428,52 @@ static esp_err_t fetch_current(const char *url, const char *lat, const char *lon
         .buffer_size_tx = 512,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .event_handler = receive_current,
-        .user_data = &response,
+        .user_data = response,
         .is_async = true,
         .disable_auto_redirect = true,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
         ESP_LOGW(TAG, "HTTP client init failed");
+        free(response);
         return ESP_FAIL;
     }
 
     const int64_t deadline = esp_timer_get_time() + HTTP_TIMEOUT_MS * 1000LL;
     esp_err_t err = ESP_ERR_HTTP_EAGAIN;
-    while (!requests_cancelled() && esp_timer_get_time() < deadline && !response.overflow) {
+    while (!requests_cancelled() && esp_timer_get_time() < deadline && !response->overflow) {
         err = esp_http_client_perform(client);
         if (err != ESP_ERR_HTTP_EAGAIN) break;
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     const int status = esp_http_client_get_status_code(client);
     const bool complete = esp_http_client_is_complete_data_received(client);
-    const bool ok = err == ESP_OK && status == 200 && complete && response.used &&
-                    !response.overflow && !requests_cancelled();
+    const bool ok = err == ESP_OK && status == 200 && complete && response->used &&
+                    !response->overflow && !requests_cancelled();
     // Release TLS allocations before cJSON allocates its small response tree.
     esp_http_client_cleanup(client);
     if (!ok) {
         ESP_LOGW(TAG, "Current data request failed: HTTP=%d len=%u err=%d",
-                 status, (unsigned)response.used, (int)err);
+                 status, (unsigned)response->used, (int)err);
+        free(response);
         return ESP_FAIL;
     }
-    response.body[response.used] = '\0';
-    return parser(response.body, lat, lon);
+    response->body[response->used] = '\0';
+    const esp_err_t parsed = parser(response->body, lat, lon);
+    free(response);
+    return parsed;
 }
 
 esp_err_t home_weather_refresh(const char *lat, const char *lon) {
     if (!home_profile_coordinates_valid(lat, lon) || !lat[0] || !lon[0]) return ESP_ERR_INVALID_ARG;
-    char url[320];
+    char url[448];
     snprintf(url, sizeof(url),
              "https://api.open-meteo.com/v1/forecast"
              "?latitude=%s&longitude=%s"
              "&current=temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m,wind_direction_10m"
-             "&timezone=auto", lat, lon);
+             "&hourly=temperature_2m,weather_code,precipitation_probability"
+             "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_hours,sunrise,sunset"
+             "&forecast_hours=24&forecast_days=4&timezone=auto", lat, lon);
     return fetch_current(url, lat, lon, weather_parse);
 }
 

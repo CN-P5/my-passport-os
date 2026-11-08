@@ -6,34 +6,64 @@
 
 static ui_theme_t s_ui_theme = UI_THEME_CLASSIC;
 
-/* Palettes share fonts, images and layout; colour data adds no live UI tree. */
-static const uint32_t s_palettes[UI_THEME_COUNT][UI_COLOR_COUNT] = {
+/* Palettes share fonts, images and layout; colour data adds no live UI tree.
+ *
+ * 每个主题有两套中性色：[0] 亮底、[1] 暗底。色相身份（accent/danger/success/…）
+ * 在亮底上需要压暗一档才够对比，因此不是简单地把暗色调色板反相。
+ * 主题选择与亮暗选择是正交的两条轴，见 ui_appearance.h。 */
+static const uint32_t s_palettes[UI_THEME_COUNT][2][UI_COLOR_COUNT] = {
+    /* 经典绿磷光 */
     [UI_THEME_CLASSIC] = {
-        0x03120B, 0x091E14, 0x122E20, 0x37694B, 0xA8EDBB,
-        0x80AF90, 0x8CF5A6, 0xFF9585, 0x03120B, 0x8CF5A6, 0xF2CA6D,
-        0x8CF5A6, 0x8CF5A6,
+        { /* light */
+            0xEDF5EF, 0xF7FBF8, 0xDCEAE1, 0x8FA99A, 0x10241A,
+            0x486A58, 0x1B7F52, 0xBB3F31, 0xFFFFFF, 0x1B7F52, 0x8A6108,
+            0x1B7F52, 0x1B7F52,
+        },
+        { /* dark */
+            0x03120B, 0x091E14, 0x122E20, 0x37694B, 0xA8EDBB,
+            0x80AF90, 0x8CF5A6, 0xFF9585, 0x03120B, 0x8CF5A6, 0xF2CA6D,
+            0x8CF5A6, 0x8CF5A6,
+        },
     },
+    /* 复古旅行仪器 */
     [UI_THEME_TRAVEL] = {
-        0x181B1C, 0x202526, 0x303738, 0x59605D, 0xEEE7D6,
-        0xB3B2A5, 0xDDB36C, 0xF09B87, 0x181B1C, 0x9DB89A, 0xDDB36C,
-        0xDDB36C, 0xDDB36C,
+        { /* light */
+            0xF4F0E7, 0xFCF9F2, 0xE8E1D2, 0xB3A78E, 0x241E16,
+            0x6A6050, 0x8F6417, 0xB0452C, 0xFFFFFF, 0x4A7248, 0x8F6417,
+            0x8F6417, 0x8F6417,
+        },
+        { /* dark */
+            0x181B1C, 0x202526, 0x303738, 0x59605D, 0xEEE7D6,
+            0xB3B2A5, 0xDDB36C, 0xF09B87, 0x181B1C, 0x9DB89A, 0xDDB36C,
+            0xDDB36C, 0xDDB36C,
+        },
     },
+    /* 像素白 */
     [UI_THEME_PLAYFUL] = {
-        0xF5F7F6, 0xE8EFEC, 0xD7E9E1, 0x7B8885, 0x252D30,
-        0x56635F, 0xA5315B, 0xAE302E, 0xFFFFFF, 0x286B59, 0x805710,
-        0x28648B, 0xA64B29,
+        { /* light */
+            0xF5F7F6, 0xE8EFEC, 0xD7E9E1, 0x7B8885, 0x252D30,
+            0x56635F, 0xA5315B, 0xAE302E, 0xFFFFFF, 0x286B59, 0x805710,
+            0x28648B, 0xA64B29,
+        },
+        { /* dark */
+            0x181B1C, 0x202725, 0x2D3935, 0x53605D, 0xE9EDEB,
+            0xAFBDB7, 0xF58FAA, 0xFF968A, 0x181B1C, 0x8DDFC5, 0xFFD37D,
+            0x86C9FF, 0xFFAD78,
+        },
     },
+    /* 霓虹黑 */
     [UI_THEME_NEON] = {
-        0x0A0B10, 0x17151F, 0x252B32, 0x596373, 0xF4F4F6,
-        0xA4AFC0, 0x38E8E1, 0xFF747D, 0x10131A, 0xAAEE6D, 0xFFD45A,
-        0xFF78CA, 0xFFB75E,
+        { /* light */
+            0xF1F4FA, 0xFFFFFF, 0xE2E8F3, 0xA6B0C4, 0x12161F,
+            0x525E76, 0x0B7F82, 0xB83442, 0xFFFFFF, 0x3D6F1F, 0x9A6E00,
+            0xA8338A, 0xA4581A,
+        },
+        { /* dark */
+            0x0A0B10, 0x17151F, 0x252B32, 0x596373, 0xF4F4F6,
+            0xA4AFC0, 0x38E8E1, 0xFF747D, 0x10131A, 0xAAEE6D, 0xFFD45A,
+            0xFF78CA, 0xFFB75E,
+        },
     },
-};
-
-static const uint32_t s_playful_dark[UI_COLOR_COUNT] = {
-    0x181B1C, 0x202725, 0x2D3935, 0x53605D, 0xE9EDEB,
-    0xAFBDB7, 0xF58FAA, 0xFF968A, 0x181B1C, 0x8DDFC5, 0xFFD37D,
-    0x86C9FF, 0xFFAD78,
 };
 
 void ui_theme_set(ui_theme_t theme)
@@ -50,12 +80,13 @@ bool ui_theme_is_multicolor(void)
 uint32_t ui_theme_color(ui_color_role_t role)
 {
     if ((unsigned)role >= UI_COLOR_COUNT) role = UI_COLOR_TEXT;
-    return s_palettes[s_ui_theme][role];
+    return s_palettes[s_ui_theme][ui_appearance_is_dark() ? 1 : 0][role];
 }
+// 暗色场景（首页人像/夜景）始终取暗底调色板，不随亮暗模式翻转。
 uint32_t ui_theme_color_on_dark(ui_color_role_t role)
 {
     if ((unsigned)role >= UI_COLOR_COUNT) role = UI_COLOR_TEXT;
-    return s_ui_theme == UI_THEME_PLAYFUL ? s_playful_dark[role] : ui_theme_color(role);
+    return s_palettes[s_ui_theme][1][role];
 }
 uint32_t ui_theme_portrait_color(uint8_t level)
 {

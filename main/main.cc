@@ -18,6 +18,7 @@
 #include "driver/gpio.h"
 #include "bsp_i2c.h"
 #include "ui/ui_capture.h"
+#include "ui/ui_appearance.h"
 #include "apps/pomodoro/app_pomodoro.h"
 #include "esp_log.h"
 #include "passport_muse.h"
@@ -224,6 +225,12 @@ static void system_monitor_task(void *arg) {
         }
         wifi_setup_tick();
         settings_tick();
+        // 亮暗自动模式跨过日出/日落：启动器就地重建，其它页面下次进入时生效。
+        if (ui_appearance_tick() && app_registry_get_active() == APP_ID_LAUNCHER &&
+            app_registry_screen_is_on()) {
+            launcher_ui_hide();
+            launcher_ui_show();
+        }
         app_registry_tick();
         pomodoro_service_tick();
         if (app_registry_get_active() == APP_ID_LAUNCHER && app_registry_screen_is_on()) {

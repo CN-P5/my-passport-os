@@ -1,6 +1,9 @@
 // 首页天气:Open-Meteo(免 API Key)当前温度+WMO 天气码,映射为中文短语。
 // 坐标由上传网页在浏览器端完成地理编码后写入资料,设备端只发一次小请求。
 // 上次成功结果缓存到 NVS,无网开机也能显示最近一次天气。
+//
+// 同一次请求顺带取回逐时(24h)/逐日(4d)预报与日出日落:天气应用直接读这份
+// 快照,亮暗自动模式也从这里拿日出日落。预报只放内存(断电后重新拉取)。
 #pragma once
 
 #include <stdbool.h>
@@ -12,6 +15,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define HOME_FORECAST_HOURS 24
+#define HOME_FORECAST_DAYS 4
 
 typedef struct {
     bool valid;
@@ -31,6 +37,35 @@ typedef struct {
     uint32_t pm25_x10; /* tenths of micrograms per cubic metre */
 } home_air_quality_t;
 
+// 逐时/逐日预报快照（天气应用与亮暗自动模式共用）。
+typedef struct {
+    int8_t temp_c;
+    uint16_t code;
+    uint8_t precip_pct;
+    uint8_t hour; /* 本地小时 0..23 */
+} home_forecast_hour_t;
+
+typedef struct {
+    int8_t tmax_c;
+    int8_t tmin_c;
+    uint16_t code;
+    uint8_t precip_h;
+    uint16_t sunrise_min; /* 本地分钟 0..1439 */
+    uint16_t sunset_min;
+} home_forecast_day_t;
+
+typedef struct {
+    bool valid;
+    uint32_t updated_at;
+    uint8_t hour_count;
+    home_forecast_hour_t hours[HOME_FORECAST_HOURS];
+    uint8_t day_count;
+    home_forecast_day_t days[HOME_FORECAST_DAYS];
+    bool sun_valid;
+    uint16_t sunrise_min;
+    uint16_t sunset_min;
+} home_forecast_t;
+
 bool home_air_quality_get(home_air_quality_t *out);
 esp_err_t home_air_quality_refresh(const char *lat, const char *lon);
 void home_air_quality_label(bool connected, char *out, size_t capacity);
@@ -42,6 +77,9 @@ void home_weather_cancel_requests(void);
 void home_weather_init(void);
 
 bool home_weather_get(home_weather_t *out);
+
+// 逐时(未来 24h)/逐日(未来 4d)预报 + 日出日落；只在本次开机拉取成功后有效。
+bool home_weather_forecast_get(home_forecast_t *out);
 
 // WMO 码 → 中文短语(全部在 buddy 字体字库内)。
 const char *home_weather_code_text(uint16_t code);

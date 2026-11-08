@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "ui_appearance.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -63,7 +65,8 @@ const char *ui_theme_name(ui_theme_t theme);
 
 #define UI_SKY        UI_BG
 #define UI_SKY_DARK   (ui_theme_is_multicolor() ? UI_SECONDARY : UI_ACCENT)
-#define UI_INK        (ui_theme_get() == UI_THEME_PLAYFUL ? UI_TEXT : UI_ON_ACCENT)
+// 墨色：画在"纸面"上的描边/阴影。亮底用正文色，暗底用强调反色。
+#define UI_INK        (ui_appearance_is_dark() ? UI_ON_ACCENT : UI_TEXT)
 #define UI_PAPER      UI_SURFACE
 #define UI_GRASS      UI_SUCCESS
 #define UI_GRASS_DARK UI_SUCCESS

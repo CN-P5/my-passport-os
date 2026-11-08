@@ -97,7 +97,10 @@ int main(int argc,char **argv) {
     strcpy(zhuhai.lat,"22.2707");strcpy(zhuhai.lon,"113.5767");
     assert(home_profile_set_text(&zhuhai)==ESP_OK);
     assert(home_weather_refresh(zhuhai.lat,zhuhai.lon)==ESP_OK);
-    assert(strstr(last_url,"wind_direction_10m&timezone=auto"));
+    assert(strstr(last_url,"wind_direction_10m&hourly=temperature_2m"));
+    assert(strstr(last_url,"&daily=weather_code,temperature_2m_max,temperature_2m_min,"
+                           "precipitation_hours,sunrise,sunset"));
+    assert(strstr(last_url,"&forecast_hours=24&forecast_days=4&timezone=auto"));
     assert(home_weather_get(&weather)&&weather.temp_c==26&&weather.humidity==77);
     // Real clock in the host test: a fresh fetch is stamped and persisted.
     assert(weather.updated_at>=1700000000u&&tz_minutes==480&&tz_writes==0);
@@ -177,7 +180,8 @@ int main(int argc,char **argv) {
         "{\"current_units\":{\"pm2_5\":\"mg/m³\"},\"current\":{\"pm2_5\":12}}",NULL};*bad;++bad){
         air_response=*bad;assert(home_air_quality_refresh(zhuhai.lat,zhuhai.lon)==ESP_FAIL);assert(!home_air_quality_get(&air));
     }
-    char huge[1300];memset(huge,' ',sizeof(huge));memcpy(huge,good_air,strlen(good_air));huge[sizeof(huge)-1]=0;
+    /* 响应缓冲上限是 RESPONSE_MAX(4096)：超长正文必须判失败而不是截断解析。 */
+    char huge[4300];memset(huge,' ',sizeof(huge));memcpy(huge,good_air,strlen(good_air));huge[sizeof(huge)-1]=0;
     air_response=huge;assert(home_air_quality_refresh(zhuhai.lat,zhuhai.lon)==ESP_FAIL);assert(!home_air_quality_get(&air));
     air_response="{\"current_units\":{\"pm2_5\":\"μg/m³\"},\"current\":{\"pm2_5\":0}}";
     assert(home_air_quality_refresh(zhuhai.lat,zhuhai.lon)==ESP_OK);home_air_quality_label(true,label,sizeof(label));assert(!strcmp(label,"PM2.5 0.0"));

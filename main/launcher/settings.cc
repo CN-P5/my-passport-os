@@ -11,6 +11,7 @@
 #include "bsp_battery.h"
 #include "bsp_display.h"
 #include "ui_pixel.h"
+#include "ui/ui_appearance.h"
 #include "app_fonts.h"
 #include "esp_log.h"
 #include "wifi_manager.h"
@@ -31,7 +32,7 @@ constexpr char kNvsNamespace[] = "system_prefs";
 constexpr uint8_t kVolumeStep = 10;
 constexpr uint8_t kBrightness[] = {20, 40, 60, 80, 100};
 constexpr uint16_t kTimeouts[] = {0, 15, 30, 60, 120, 300};
-constexpr size_t kRowCount = 9;
+constexpr size_t kRowCount = 10;
 
 uint8_t s_volume = 80;
 uint8_t s_brightness = 80;
@@ -114,14 +115,16 @@ void refresh_ui() {
         lv_label_set_text(s_values[2], value);
     }
     lv_label_set_text(s_values[3], ui_theme_name(s_theme));
-    lv_label_set_text(s_values[4], ui_sfx_enabled() ? "开" : "关");
-    lv_label_set_text(s_values[5], "打开");
-    lv_label_set_text(s_values[6], s_reset_pending ? "再次确定" : "恢复");
-    lv_label_set_text(s_values[7], "打开");
-    lv_label_set_text(s_values[8], "查看");
+    lv_label_set_text(s_values[4], ui_appearance_mode_name(ui_appearance_mode()));
+    lv_label_set_text(s_values[5], ui_sfx_enabled() ? "开" : "关");
+    lv_label_set_text(s_values[6], "打开");
+    lv_label_set_text(s_values[7], s_reset_pending ? "再次确定" : "恢复");
+    lv_label_set_text(s_values[8], "打开");
+    lv_label_set_text(s_values[9], "查看");
     static const char *hints[kRowCount] = {
         "确定后上下调音量", "长按下键满亮两分钟",
         "确定切换熄屏时间", "确定切换主题",
+        "亮 / 暗 / 按日出日落自动",
         "轻触反馈", "手机配网、资料与名片", "仅恢复设备设置", "设备选网与已存网络", "查看网络、时间与电量"
     };
     lv_obj_set_flag(s_confirm, LV_OBJ_FLAG_HIDDEN, !s_reset_pending);
@@ -174,7 +177,7 @@ void create_ui() {
     ui_pixel_battery_set(&s_battery, bsp_battery_soc());
 
     static const char *labels[kRowCount] = {
-        "音量", "屏幕亮度", "自动熄屏", "外观主题", "按键音效", "手机设置", "恢复默认", "无线网络", "网络与时间"
+        "音量", "屏幕亮度", "自动熄屏", "外观主题", "亮暗模式", "按键音效", "手机设置", "恢复默认", "无线网络", "网络与时间"
     };
     for (size_t i = 0; i < kRowCount; ++i) {
         const int y = 38 + static_cast<int>(i) * 29;
@@ -207,7 +210,7 @@ void create_ui() {
     lv_obj_remove_flag(s_confirm, LV_OBJ_FLAG_SCROLLABLE); lv_obj_set_pos(s_confirm, 12, 42);lv_obj_set_size(s_confirm, 216, 220);
     auto *question = ui_pixel_label(s_confirm, "恢复默认设置？", &ui_font_20, UI_DANGER);
     lv_obj_set_pos(question, 0, 0);lv_obj_set_width(question, 216);
-    auto *consequence = ui_pixel_label(s_confirm, "音量、亮度设为 80%\n60 秒自动熄屏\n主题恢复经典绿\n按键音效开启\nWi-Fi 与个人资料保留\n上下键取消", &buddy_font_16, UI_TEXT);
+    auto *consequence = ui_pixel_label(s_confirm, "音量、亮度设为 80%\n60 秒自动熄屏\n主题恢复经典绿\n亮暗恢复自动\n按键音效开启\nWi-Fi 与个人资料保留\n上下键取消", &buddy_font_16, UI_TEXT);
     lv_obj_set_pos(consequence, 0, 54);lv_obj_set_width(consequence, 216);
     lv_obj_set_style_text_line_space(consequence, 5, 0);
 
@@ -300,12 +303,18 @@ void settings_on_key(uint8_t btn, app_btn_event_t event, uint16_t) {
                 rebuild = true;
                 break;
             case 4:
-                ui_sfx_set_enabled(!ui_sfx_enabled());
+                // 亮 / 暗 / 自动(日出日落)：切换后整屏按新调色板重建。
+                ui_appearance_set_mode(static_cast<ui_appearance_mode_t>(
+                    (static_cast<unsigned>(ui_appearance_mode()) + 1) % UI_APPEARANCE_COUNT));
+                rebuild = true;
                 break;
             case 5:
+                ui_sfx_set_enabled(!ui_sfx_enabled());
+                break;
+            case 6:
                 app_registry_switch_to(APP_ID_WIFI);
                 return;
-            case 6:
+            case 7:
                 if (!s_reset_pending) {
                     s_reset_pending = true;
                     bsp_lvgl_lock(-1);
@@ -319,13 +328,14 @@ void settings_on_key(uint8_t btn, app_btn_event_t event, uint16_t) {
                 s_timeout = 60;
                 s_theme = UI_THEME_CLASSIC;
                 ui_sfx_set_enabled(true);
+                ui_appearance_set_mode(UI_APPEARANCE_AUTO);
                 rebuild = true;
                 break;
-            case 7:
+            case 8:
                 settings_stop();
                 if (!wifi_picker_open()) settings_start();
                 return;
-            case 8:
+            case 9:
                 settings_stop(); network_diagnostics_open(); return;
         }
         apply_settings();
@@ -385,6 +395,7 @@ void settings_bootstrap(void) {
     if (s_volume > 100) s_volume = 80;
     s_brightness = validated(kBrightness, s_brightness, static_cast<uint8_t>(80));
     s_timeout = validated(kTimeouts, s_timeout, static_cast<uint16_t>(60));
+    ui_appearance_init();
     ui_theme_set(s_theme);
     apply_settings();
     ESP_LOGI(kTag, "Loaded volume=%u brightness=%u timeout=%u theme=%s",

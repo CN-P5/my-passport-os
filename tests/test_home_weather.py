@@ -13,5 +13,6 @@ with tempfile.TemporaryDirectory(prefix='passport-weather-') as temporary:
                     '-Wno-unused-variable','-fsanitize=address,undefined','-fno-omit-frame-pointer',
                     '-Itests/home_mocks','-Itests/radio_mocks','-Imain','-I'+str(CJSON),
                     'tests/test_home_weather.c','main/apps/home/home_profile.c',
-                    'main/apps/home/home_weather.c',str(CJSON/'cJSON.c'),'-lm','-o',str(executable)],cwd=ROOT,check=True)
+                    'main/apps/home/home_weather.c','tests/home_mocks/ui_appearance_mock.c',
+                    str(CJSON/'cJSON.c'),'-lm','-o',str(executable)],cwd=ROOT,check=True)
     subprocess.run([str(executable)]+sys.argv[1:],check=True)

@@ -77,6 +77,8 @@ python3 tests/test_avatar_upload.py
     tests/test_phone_time.cc tests/vendor/cjson/cJSON.c -o "$test_dir/phone-time"
 "$test_dir/phone-time"
 python3 tests/test_city_catalog.py
+"${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain tests/test_ui_appearance.c -o "$test_dir/ui-appearance"
+"$test_dir/ui-appearance"
 python3 tests/test_home_weather.py
 python3 tests/test_home_weather_schedule.py
 python3 tests/test_radio_catalog.py
