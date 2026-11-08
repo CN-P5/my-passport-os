@@ -96,7 +96,8 @@ void refresh_ui() {
         const size_t first = s_selected < 7 ? 0 : kRowCount - 7;
         lv_obj_set_flag(s_rows[i], LV_OBJ_FLAG_HIDDEN, s_reset_pending || i < first || i >= first + 7);
         if (i >= first) lv_obj_set_y(s_rows[i], 38 + static_cast<int>(i - first) * 29);
-        const uint32_t focus = s_reset_pending && i == 6 ? UI_DANGER : UI_ACCENT;
+        // 恢复默认行在第 7 行（0 基）：确认态用危险色。
+        const uint32_t focus = s_reset_pending && i == 7 ? UI_DANGER : UI_ACCENT;
         ui_pixel_bg_color(s_rows[i], selected ? focus : UI_BG);
         ui_pixel_text_color(s_names[i], selected ? UI_ON_ACCENT : UI_TEXT);
         ui_pixel_text_color(s_values[i], selected ? UI_ON_ACCENT : UI_TEXT_DIM);

@@ -182,6 +182,8 @@ void build_ui()
 
     s_cond = ui_pixel_label(s_screen, "暂无数据", &buddy_font_16, UI_DANGER);
     lv_obj_set_pos(s_cond, 12, 72);
+    lv_obj_set_width(s_cond, 130);
+    lv_label_set_long_mode(s_cond, LV_LABEL_LONG_MODE_DOTS);
 
     s_art = lv_obj_create(s_screen);
     lv_obj_remove_style_all(s_art);
