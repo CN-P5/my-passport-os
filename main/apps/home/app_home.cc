@@ -164,6 +164,7 @@ lv_obj_t *s_screen = nullptr;
 lv_obj_t *s_avatar_img = nullptr;      // Indexed portrait with a transparent background.
 lv_obj_t *s_portrait_ph = nullptr;     // 无头像占位文字
 lv_obj_t *s_lbl_date = nullptr;
+lv_obj_t *s_lbl_week = nullptr;  // 星期几,与日期不同的相近色
 lv_obj_t *s_wifi_bars[3] = {nullptr, nullptr, nullptr};
 ui_pixel_battery_t s_batt = {nullptr, nullptr};
 bool s_share_visible = false;
@@ -306,6 +307,14 @@ void wicon_clear(void) {
     s_wicon_spinning = false;
 }
 
+// 亮色底上白色云/浅灰云几乎不可见，按亮暗模式换一组对照色。
+#define WICON_WHITE (ui_appearance_is_dark() ? 0xF4F8FB : 0x8FA3B5)
+#define WICON_LIGHT (ui_appearance_is_dark() ? 0xB9C4CC : 0x74889B)
+#define WICON_MID (ui_appearance_is_dark() ? 0xC6CED4 : 0x6C8093)
+#define WICON_RAIN (ui_appearance_is_dark() ? 0x9AA7B4 : 0x5A7085)
+#define WICON_SNOW (ui_appearance_is_dark() ? 0xD7DEE4 : 0x93A7B8)
+#define WICON_STORM (ui_appearance_is_dark() ? 0x8B98A5 : 0x4F6577)
+
 // 三段云 + 墨影,可复用在阴/雨/雪/雷/雾图标里
 void wicon_cloud(int x, int y, uint32_t body) {
     wicon_block(x, y + 6, 18, 5, body);
@@ -329,40 +338,40 @@ void wicon_sun(void) {
 void wicon_sun_cloud(void) {
     wicon_block(13, 0, 7, 7, UI_YELLOW);  // 右上太阳(下半被云压住)
     wicon_block(20, 2, 2, 2, UI_YELLOW);
-    wicon_cloud(0, 4, 0xFFFFFF);
+    wicon_cloud(0, 4, WICON_WHITE);
 }
 
 void weather_icon_draw(uint16_t code) {
     wicon_clear();
     if (code == 0) { wicon_sun(); return; }
     if (code == 1 || code == 2) { wicon_sun_cloud(); return; }
-    if (code == 3) { wicon_cloud(2, 1, 0xB9C4CC); return; }              // 阴
+    if (code == 3) { wicon_cloud(2, 1, WICON_LIGHT); return; }              // 阴
     if (code == 45 || code == 48) {                                       // 雾
-        wicon_cloud(2, 0, 0xC6CED4);
+        wicon_cloud(2, 0, WICON_MID);
         wicon_block(4, 14, 14, 2, UI_SUB);
         return;
     }
     if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {       // 雨
-        wicon_cloud(2, 0, 0x9AA7B4);
+        wicon_cloud(2, 0, WICON_RAIN);
         wicon_block(4, 14, 2, 3, UI_SKY_DARK);
         wicon_block(9, 14, 2, 3, UI_SKY_DARK);
         wicon_block(14, 14, 2, 3, UI_SKY_DARK);
         return;
     }
     if ((code >= 71 && code <= 77) || code == 85 || code == 86) {         // 雪
-        wicon_cloud(2, 0, 0xD7DEE4);
+        wicon_cloud(2, 0, WICON_SNOW);
         wicon_block(4, 14, 2, 2, 0x8FC7EF);
         wicon_block(9, 14, 2, 2, 0x8FC7EF);
         wicon_block(14, 14, 2, 2, 0x8FC7EF);
         return;
     }
     if (code >= 95) {                                                     // 雷
-        wicon_cloud(2, 0, 0x8B98A5);
+        wicon_cloud(2, 0, WICON_STORM);
         wicon_block(9, 13, 3, 2, UI_YELLOW);
         wicon_block(8, 15, 2, 2, UI_YELLOW);
         return;
     }
-    wicon_cloud(2, 1, 0xB9C4CC);
+    wicon_cloud(2, 1, WICON_LIGHT);
 }
 
 // 拉取中的四点 spinner:四个色块轮流点亮,由首页 1s tick 推进
@@ -458,6 +467,7 @@ void update_clock_labels() {
     char hh[3] = "--";
     char mm[3] = "--";
     char date_buf[24];
+    char week_buf[8] = {0};
     const bool valid = home_clock_valid();
     if (valid) {
         char time_buf[8];
@@ -466,14 +476,12 @@ void update_clock_labels() {
         hh[1] = time_buf[1];
         mm[0] = time_buf[3];
         mm[1] = time_buf[4];
-        char ymd[16];
-        char week[8];
-        home_clock_format_date(ymd, sizeof(ymd));
-        home_clock_format_weekday(week, sizeof(week));
-        std::snprintf(date_buf, sizeof(date_buf), "%s %s", ymd, week);
+        home_clock_format_date(date_buf, sizeof(date_buf));
+        home_clock_format_weekday(week_buf, sizeof(week_buf));
     } else {
         // 未校时一律显示占位符。时间只能来自 SNTP 或 PC 校时,设备自己没有可信来源。
         std::snprintf(date_buf, sizeof(date_buf), "等待校时");
+        week_buf[0] = '\0';
     }
 
     const char digits[4] = {hh[0], hh[1], mm[0], mm[1]};
@@ -486,6 +494,7 @@ void update_clock_labels() {
         }
     }
     ui_pixel_label_set_text(s_lbl_date, date_buf);
+    if (s_lbl_week) ui_pixel_label_set_text(s_lbl_week, week_buf);
 
     s_clk_colon_on = !s_clk_colon_on;
     for (lv_obj_t *dot : s_clk_colon) {
@@ -681,14 +690,7 @@ void scene_px(pixel_scene::Ink &ink, int x, int y, int w, int h, uint32_t color)
     ink.box(x, y, w, h, color);
 }
 
-// 天空渐变：用 3 段色带近似，省掉逐行绘制。
-void scene_sky(pixel_scene::Ink &ink, uint32_t upper, uint32_t lower) {
-    scene_px(ink, 0, kSceneTop, 240, 18, upper);
-    scene_px(ink, 0, kSceneTop + 18, 240, 18, lower);
-}
-
 void scene_seaside(pixel_scene::Ink &ink) {
-    scene_sky(ink, 0x2A4A6B, 0xD98A5B);
     scene_px(ink, 176, kSceneTop + 12, 16, 16, 0xF7C948);
     scene_px(ink, 180, kSceneTop + 8, 8, 8, 0xF7C948);
     scene_px(ink, 0, kSceneTop + 36, 240, 10, 0x2E6E8E);
@@ -698,23 +700,21 @@ void scene_seaside(pixel_scene::Ink &ink) {
 }
 
 void scene_town(pixel_scene::Ink &ink) {
-    scene_sky(ink, 0x101B33, 0x1B2B4A);
     scene_px(ink, 196, kSceneTop + 6, 10, 10, 0xF2E8B0);
     static const int hs[] = {14, 22, 10, 26, 18, 12, 20, 16};
     for (int i = 0; i < 8; ++i) {
         const int w = 24 + (i % 2) * 6;
         const int h = hs[i];
         const int x = i * 30;
-        scene_px(ink, x, kSceneTop + 36 - h, w, h + 8, i % 2 ? 0x0B1526 : 0x14203A);
+        scene_px(ink, x, kSceneTop + 36 - h, w, h + 8, i % 2 ? 0x33456B : 0x263758);
         for (int wy = 0; wy < h - 6; wy += 6)
             for (int wx = 0; wx < w - 8; wx += 8)
                 if (((wx + wy + i) % 16) == 0) scene_px(ink, x + 4 + wx, kSceneTop + 40 - h + wy, 3, 3, 0xF2B93B);
     }
-    scene_px(ink, 0, kSceneTop + 44, 240, 8, 0x1B2434);
+    scene_px(ink, 0, kSceneTop + 44, 240, 4, ui_theme_color(UI_COLOR_BORDER));
 }
 
 void scene_mountain(pixel_scene::Ink &ink) {
-    scene_sky(ink, 0x2B4A6F, 0x9EC3D9);
     for (int step = 0; step < 18; ++step) {
         const int y = kSceneTop + 46 - step;
         scene_px(ink, 30 + step * 2, y, 2, 1, 0x3A4A5A);
@@ -727,18 +727,16 @@ void scene_mountain(pixel_scene::Ink &ink) {
 }
 
 void scene_sky_scene(pixel_scene::Ink &ink) {
-    scene_sky(ink, 0x8FC7E8, 0xC9E4F2);
-    scene_px(ink, 24, kSceneTop + 12, 34, 6, 0xF4F8FB);
-    scene_px(ink, 32, kSceneTop + 8, 18, 6, 0xF4F8FB);
-    scene_px(ink, 150, kSceneTop + 30, 40, 6, 0xF4F8FB);
-    scene_px(ink, 160, kSceneTop + 26, 20, 6, 0xF4F8FB);
+    scene_px(ink, 24, kSceneTop + 12, 34, 6, WICON_WHITE);
+    scene_px(ink, 32, kSceneTop + 8, 18, 6, WICON_WHITE);
+    scene_px(ink, 150, kSceneTop + 30, 40, 6, WICON_WHITE);
+    scene_px(ink, 160, kSceneTop + 26, 20, 6, WICON_WHITE);
     scene_px(ink, 104, kSceneTop + 10, 20, 16, 0xE05C6E);
     scene_px(ink, 108, kSceneTop + 26, 12, 8, 0xE05C6E);
     scene_px(ink, 112, kSceneTop + 34, 4, 4, 0xF2C14E);
 }
 
 void scene_desert(pixel_scene::Ink &ink) {
-    scene_sky(ink, 0xF2CE92, 0xE8B06A);
     scene_px(ink, 40, kSceneTop + 10, 14, 14, 0xF7C948);
     scene_px(ink, 0, kSceneTop + 38, 240, 14, 0xD89A5C);
     scene_px(ink, 60, kSceneTop + 34, 120, 8, 0xC07A3E);
@@ -778,7 +776,11 @@ void draw_passport_details(lv_event_t *event) {
     ink.box(88, 158, 14, 2, kPhosBorder); ink.box(100, 148, 2, 12, kPhosBorder);
     ink.box(14, 172, 24, 2, kPhos);
     ink.box(42, 172, 60, 1, kPhosBorder);
-    for (int i = 0; i < 18; ++i) ink.box(14 + i * 5, 226, i % 3 ? 1 : 2, i % 4 ? 5 : 8, kPhosBorder);
+    // 签名下的装饰竖条：四色轮换，比整片描边色好看，同时保留条码节奏。
+    static const ui_color_role_t kBarTones[4] = {UI_COLOR_ACCENT, UI_COLOR_SECONDARY,
+                                                 UI_COLOR_SUCCESS, UI_COLOR_TERTIARY};
+    for (int i = 0; i < 18; ++i)
+        ink.box(14 + i * 5, 226, i % 3 ? 1 : 2, i % 4 ? 5 : 8, ui_theme_color(kBarTones[i % 4]));
     ink.box(120, 162, 110, 1, kPhosBorder);
     draw_scene(ink);
 }
@@ -850,9 +852,13 @@ void create_ui() {
     s_clk_colon[1] = px_block(s_clk_slots[2], 0, 21, 4, 4, kClock);
 
     // 日期下移至 y=76，离开大时钟底部拉开 9px 舒适间距
+    // 日期与星期分成两个标签：色相接近但能区分，比一整行同色更耐看。
     s_lbl_date = make_label(s_screen, &buddy_font_16, ui_theme_color(UI_COLOR_SECONDARY), LV_TEXT_ALIGN_LEFT);
-    lv_obj_set_width(s_lbl_date, 114);
+    lv_obj_set_width(s_lbl_date, 68);
     lv_obj_set_pos(s_lbl_date, 120, 77);
+    s_lbl_week = make_label(s_screen, &buddy_font_16, ui_theme_color(UI_COLOR_SUCCESS), LV_TEXT_ALIGN_LEFT);
+    lv_obj_set_width(s_lbl_week, 42);
+    lv_obj_set_pos(s_lbl_week, 188, 77);
 
     // 定位 pin + 城市名 (y=98..114)
     px_block(s_screen, 118, 102, 6, 6, kPhos);
@@ -1314,6 +1320,7 @@ void home_stop() {
     s_avatar_img = nullptr;
     s_portrait_ph = nullptr;
     s_lbl_date = nullptr;
+    s_lbl_week = nullptr;
     for (lv_obj_t *&bar : s_wifi_bars) bar = nullptr;
     s_batt = {nullptr, nullptr};
     for (lv_obj_t *&slot : s_clk_slots) slot = nullptr;
