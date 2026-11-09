@@ -87,6 +87,8 @@ void home_profile_init(void) {
     size_t len;
     len = sizeof(s_profile.name);
     nvs_get_str(handle, "name", s_profile.name, &len);
+    len = sizeof(s_profile.brand);
+    nvs_get_str(handle, "brand", s_profile.brand, &len);
     len = sizeof(s_profile.signature);
     nvs_get_str(handle, "signature", s_profile.signature, &len);
     len = sizeof(s_profile.city);
@@ -125,6 +127,7 @@ uint32_t home_profile_version(void) {
 esp_err_t home_profile_set_text(const home_profile_t *in) {
     if (!in) return ESP_ERR_INVALID_ARG;
     if (!utf8_len_ok(in->name, HOME_NAME_MAX) ||
+        !utf8_len_ok(in->brand, HOME_BRAND_MAX) ||
         !utf8_len_ok(in->signature, HOME_SIGNATURE_MAX) ||
         !utf8_len_ok(in->city, HOME_CITY_MAX) ||
         !utf8_len_ok(in->address, HOME_ADDRESS_MAX) ||
@@ -149,6 +152,7 @@ esp_err_t home_profile_set_text(const home_profile_t *in) {
     }
     do {
         if ((err = nvs_set_str(handle, "name", in->name)) != ESP_OK) break;
+    if ((err = nvs_set_str(handle, "brand", in->brand)) != ESP_OK) break;
         if ((err = nvs_set_str(handle, "signature", in->signature)) != ESP_OK) break;
         if ((err = nvs_set_str(handle, "city", in->city)) != ESP_OK) break;
         if ((err = nvs_set_str(handle, "address", in->address)) != ESP_OK) break;

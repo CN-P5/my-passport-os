@@ -70,15 +70,16 @@ namespace {
 constexpr char kTag[] = "app_home";
 LV_FONT_DECLARE(lv_font_unscii_8);
 
-// A8 artwork encodes highlights: keep a dark home scene even in the light theme.
-#define kBg (ui_theme_color_on_dark(UI_COLOR_BG))
-#define kPhos (ui_theme_color_on_dark(UI_COLOR_TEXT))
-#define kPhosDim (ui_theme_color_on_dark(UI_COLOR_TEXT_DIM))
-#define kPhosBorder (ui_theme_color_on_dark(UI_COLOR_BORDER))
-#define kClock (ui_theme_get() == UI_THEME_NEON ? UI_ACCENT : ui_theme_get() == UI_THEME_PLAYFUL ? ui_theme_color_on_dark(UI_COLOR_SECONDARY) : kPhos)
-#define kBand (ui_theme_get() == UI_THEME_NEON ? UI_SECONDARY : ui_theme_get() == UI_THEME_PLAYFUL ? ui_theme_color_on_dark(UI_COLOR_SUCCESS) : UI_AMBER)
-#define kTemperature (ui_theme_is_multicolor() ? ui_theme_color_on_dark(UI_COLOR_TERTIARY) : kPhos)
-#define kWeatherAccent (ui_theme_color_on_dark(ui_theme_get() == UI_THEME_NEON ? UI_COLOR_SUCCESS : UI_COLOR_ACCENT))
+// 首页跟随亮暗模式：亮色 = 浅纸底 + 深墨字，暗色 = 原磷光风格。
+// （此前固定用 *_on_dark，所以切到亮色时除顶栏外整屏仍是黑底。）
+#define kBg (ui_theme_color(UI_COLOR_BG))
+#define kPhos (ui_theme_color(UI_COLOR_TEXT))
+#define kPhosDim (ui_theme_color(UI_COLOR_TEXT_DIM))
+#define kPhosBorder (ui_theme_color(UI_COLOR_BORDER))
+#define kClock (ui_theme_get() == UI_THEME_NEON ? UI_ACCENT : ui_theme_get() == UI_THEME_PLAYFUL ? ui_theme_color(UI_COLOR_SECONDARY) : kPhos)
+#define kBand (ui_theme_get() == UI_THEME_NEON ? UI_SECONDARY : ui_theme_get() == UI_THEME_PLAYFUL ? ui_theme_color(UI_COLOR_SUCCESS) : UI_AMBER)
+#define kTemperature (ui_theme_is_multicolor() ? ui_theme_color(UI_COLOR_TERTIARY) : kPhos)
+#define kWeatherAccent (ui_theme_color(ui_theme_get() == UI_THEME_NEON ? UI_COLOR_SUCCESS : UI_COLOR_ACCENT))
 
 // 兼容既有更新函数的语义色:磷光风格里"强调/在线"都是亮绿,弱化都是暗绿。
 #define kText (kPhos)
@@ -177,6 +178,7 @@ bool s_clk_colon_on = false;
 
 lv_obj_t *s_lbl_name = nullptr;
 lv_obj_t *s_lbl_sig = nullptr;
+lv_obj_t *s_lbl_brand = nullptr;  // 顶栏品牌文字(可配置，留空则整段不显示)
 lv_obj_t *s_wicon_zone = nullptr;    // 天气图标绘制区(天气卡内 22×18)
 lv_obj_t *s_lbl_city = nullptr;
 lv_obj_t *s_lbl_wtext = nullptr;
@@ -650,6 +652,7 @@ void update_footer_label() {
 void apply_profile(const home_profile_t *prof) {
     lv_label_set_text(s_lbl_name, prof->name[0] ? prof->name : "未设置姓名");
     lv_label_set_text(s_lbl_sig, prof->signature[0] ? prof->signature : "未设置签名");
+    if (s_lbl_brand) lv_label_set_text(s_lbl_brand, prof->brand);
     refresh_weather_ui();
 }
 
@@ -666,7 +669,7 @@ lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, uint32_t color,
 void draw_passport_details(lv_event_t *event) {
     pixel_scene::Ink ink(event);
     // Open portrait and perforated seam replace retained decoration objects.
-    const uint32_t surface = ui_theme_color_on_dark(UI_COLOR_SURFACE);
+    const uint32_t surface = ui_theme_color(UI_COLOR_SURFACE);
     ink.box(116, 28, 118, 93, surface);
     ink.box(116, 128, 118, 108, surface);
     for (int y = 34; y < 234; y += 8) ink.box(110, y, 1, 3, kPhosBorder);
@@ -694,8 +697,11 @@ void create_ui() {
     ui_pixel_wifi_bars_create(s_screen, 12, 18, s_wifi_bars);
     s_batt = ui_pixel_battery_create(s_screen, 206, 6, kPhos, &lv_font_montserrat_14);
 
-    lv_obj_t *passport = ui_pixel_label(s_screen, "PASSPORT", &lv_font_montserrat_14, kPhosDim);
-    lv_obj_set_pos(passport, 42, 4);
+    // 顶栏品牌文字：默认空 = 不显示，用户在手机配网页里填了才出现。
+    s_lbl_brand = ui_pixel_label(s_screen, "", &lv_font_montserrat_14, kPhosDim);
+    lv_obj_set_pos(s_lbl_brand, 42, 4);
+    lv_obj_set_width(s_lbl_brand, 150);
+    lv_label_set_long_mode(s_lbl_brand, LV_LABEL_LONG_MODE_DOTS);
 
     lv_obj_add_event_cb(s_screen, draw_passport_details, LV_EVENT_DRAW_MAIN, nullptr);
 

@@ -20,6 +20,7 @@ extern "C" {
 #define HOME_SHARE_STORAGE_RESERVE (64 * 1024)
 #define HOME_SHARE_PATH_MAX 96
 #define HOME_NAME_MAX 32      /* UTF-8 字节数,含结尾 0(约 9 个汉字) */
+#define HOME_BRAND_MAX 32     /* 顶栏品牌文字,留空表示不显示(约 10 个汉字) */
 #define HOME_SIGNATURE_MAX 96 /* UTF-8 字节数,含结尾 0(约 31 个汉字) */
 #define HOME_CITY_MAX 48      /* UTF-8 字节数,含结尾 0 */
 #define HOME_ADDRESS_MAX 128
@@ -28,6 +29,7 @@ extern "C" {
 
 typedef struct {
     char name[HOME_NAME_MAX];
+    char brand[HOME_BRAND_MAX]; /* 首页顶栏文字,空串=不显示 */
     char signature[HOME_SIGNATURE_MAX];
     char city[HOME_CITY_MAX];
     char address[HOME_ADDRESS_MAX];

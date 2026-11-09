@@ -1,9 +1,13 @@
 // main/apps/weather/app_weather.cc —— 天气应用。
 //
-// 版面：顶栏(信号/标题/电池) → 城市 → 当前温度+天气图形 → 日出日落 →
-// 湿度/风/PM2.5 → 未来 24 小时(5 列) → 未来 3 天(3 行) → 底部提示。
+// 版面（240×320）：顶栏 → 城市 → 当前温度+大图标 → 日出日落 →
+// 湿度/风/PM2.5 → 未来 24 小时(图标在上、小时数字在下) →
+// 未来 3 天(名称+图标+天气文字+高低温度) → 底部提示。
 // 数据来自 home_weather 的共享快照（一次 HTTPS 同时填充 current/hourly/daily，
 // 并给亮暗自动模式提供日出日落），本应用不另发请求。
+//
+// 字体：中文一律用 buddy_font_16（4713 字形，覆盖本页所有文案）。
+// home_font_12 只有 119 个字形，之前用它画「日出/日落」直接变成方块。
 #include "apps/app_base.h"
 #include "apps/home/home_profile.h"
 #include "apps/home/home_weather.h"
@@ -31,12 +35,12 @@ constexpr int kHourColumns = 5;
 
 // 天气图形配色：与主题无关，亮暗两种底色下都能看清。
 constexpr uint32_t kSun = 0xF7C948;
-constexpr uint32_t kCloud = 0xA8BECC;
-constexpr uint32_t kCloudDeep = 0x7593AC;
+constexpr uint32_t kCloud = 0x7E97AC;
+constexpr uint32_t kCloudDeep = 0x5A7387;
 constexpr uint32_t kRain = 0x3B72B8;
-constexpr uint32_t kSnow = 0xEAF2FA;
-constexpr uint32_t kBolt = 0xF2A93B;
-constexpr uint32_t kFog = 0x9AA6B2;
+constexpr uint32_t kSnow = 0x8FB6D8;
+constexpr uint32_t kBolt = 0xE08B1E;
+constexpr uint32_t kFog = 0x8A97A3;
 
 lv_obj_t *s_screen;
 lv_obj_t *s_city;
@@ -45,9 +49,11 @@ lv_obj_t *s_cond;
 lv_obj_t *s_sun;
 lv_obj_t *s_metrics[3];
 lv_obj_t *s_art;
-lv_obj_t *s_hour_time[kHourColumns];
+lv_obj_t *s_hour_icon[kHourColumns];
+lv_obj_t *s_hour_hour[kHourColumns];
 lv_obj_t *s_hour_temp[kHourColumns];
 lv_obj_t *s_day_name[3];
+lv_obj_t *s_day_icon[3];
 lv_obj_t *s_day_cond[3];
 lv_obj_t *s_day_temp[3];
 lv_obj_t *s_wifi[3];
@@ -58,10 +64,11 @@ volatile bool s_busy;
 volatile bool s_dirty = true;
 uint32_t s_seen_version = 0xFFFFFFFFu;
 
-void art_block(int x, int y, int w, int h, uint32_t color)
+// 一个像素块：所有天气图形都由它拼出来，尺寸/位置都在父容器的局部坐标里。
+void block(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color)
 {
-    if (!s_art) return;
-    lv_obj_t *part = lv_obj_create(s_art);
+    if (!parent) return;
+    lv_obj_t *part = lv_obj_create(parent);
     lv_obj_remove_flag(part, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_pos(part, x, y);
     lv_obj_set_size(part, w, h);
@@ -72,79 +79,120 @@ void art_block(int x, int y, int w, int h, uint32_t color)
     lv_obj_set_style_bg_opa(part, LV_OPA_COVER, 0);
 }
 
-void art_sun(int cx, int cy)
+// 40×34 的大图形（当前天气）。
+void art_sun_big(lv_obj_t *parent, int cx, int cy)
 {
-    art_block(cx - 7, cy - 7, 14, 14, kSun);
-    art_block(cx - 9, cy - 2, 2, 4, kSun);
-    art_block(cx + 8, cy - 2, 2, 4, kSun);
-    art_block(cx - 2, cy - 9, 4, 2, kSun);
-    art_block(cx - 2, cy + 8, 4, 2, kSun);
+    block(parent, cx - 7, cy - 7, 14, 14, kSun);
+    block(parent, cx - 9, cy - 2, 2, 4, kSun);
+    block(parent, cx + 8, cy - 2, 2, 4, kSun);
+    block(parent, cx - 2, cy - 9, 4, 2, kSun);
+    block(parent, cx - 2, cy + 8, 4, 2, kSun);
 }
 
-void art_cloud(int x, int y, bool deep)
+void draw_art_big(lv_obj_t *parent, uint16_t code)
 {
-    const uint32_t color = deep ? kCloudDeep : kCloud;
-    art_block(x, y, 30, 10, color);
-    art_block(x + 6, y - 6, 14, 8, color);
-    art_block(x + 18, y - 3, 10, 6, color);
-}
-
-void art_rain(int x, int y, int drops)
-{
-    for (int i = 0; i < drops; ++i) art_block(x + 4 + i * 9, y, 3, 7, kRain);
-}
-
-void art_snow(int x, int y, int flakes)
-{
-    for (int i = 0; i < flakes; ++i) art_block(x + 4 + i * 9, y, 4, 4, kSnow);
-}
-
-void art_fog(int x, int y)
-{
-    art_block(x, y, 26, 3, kFog);
-    art_block(x + 4, y + 6, 26, 3, kFog);
-}
-
-// 按 WMO 码画 40x34 的像素图形（坐标都在 s_art 的局部空间内）。
-void draw_art(uint16_t code)
-{
-    if (!s_art) return;
-    lv_obj_clean(s_art);
+    if (!parent) return;
+    lv_obj_clean(parent);
     if (code == 0 || code == 1) {
-        art_sun(20, 16);
+        art_sun_big(parent, 20, 16);
         return;
     }
     if (code == 2) {
-        art_sun(28, 10);
-        art_cloud(2, 16, false);
+        art_sun_big(parent, 28, 10);
+        block(parent, 2, 16, 30, 10, kCloud);
+        block(parent, 8, 10, 14, 8, kCloud);
+        block(parent, 20, 13, 10, 6, kCloud);
         return;
     }
     if (code == 3) {
-        art_cloud(4, 12, false);
+        block(parent, 4, 12, 30, 10, kCloud);
+        block(parent, 10, 6, 14, 8, kCloud);
+        block(parent, 22, 9, 10, 6, kCloud);
         return;
     }
     if (code == 45 || code == 48) {
-        art_cloud(4, 6, false);
-        art_fog(4, 20);
+        block(parent, 4, 6, 30, 9, kCloud);
+        block(parent, 10, 1, 14, 7, kCloud);
+        block(parent, 4, 20, 26, 3, kFog);
+        block(parent, 8, 26, 26, 3, kFog);
         return;
     }
     if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
-        art_cloud(4, 4, false);
-        art_rain(4, 18, 3);
+        block(parent, 4, 4, 30, 10, kCloud);
+        block(parent, 10, -1, 14, 8, kCloud);
+        for (int i = 0; i < 3; ++i) block(parent, 8 + i * 9, 18, 3, 7, kRain);
         return;
     }
     if ((code >= 71 && code <= 77) || code == 85 || code == 86) {
-        art_cloud(4, 4, false);
-        art_snow(4, 18, 3);
+        block(parent, 4, 4, 30, 10, kCloud);
+        block(parent, 10, -1, 14, 8, kCloud);
+        for (int i = 0; i < 3; ++i) block(parent, 8 + i * 9, 18, 4, 4, kSnow);
         return;
     }
     if (code >= 95) {
-        art_cloud(4, 4, true);
-        art_block(18, 18, 3, 6, kBolt);
-        art_block(15, 23, 3, 5, kBolt);
+        block(parent, 4, 2, 30, 10, kCloudDeep);
+        block(parent, 10, -3, 14, 8, kCloudDeep);
+        block(parent, 16, 16, 4, 7, kBolt);
+        block(parent, 13, 22, 4, 6, kBolt);
         return;
     }
-    art_cloud(4, 12, false);
+    block(parent, 6, 12, 30, 10, kCloud);
+    block(parent, 12, 6, 14, 8, kCloud);
+}
+
+// 18×14 的小图形（逐小时 / 逐日）。
+void art_sun_small(lv_obj_t *parent)
+{
+    block(parent, 6, 4, 6, 6, kSun);
+    block(parent, 4, 6, 2, 2, kSun);
+    block(parent, 12, 6, 2, 2, kSun);
+    block(parent, 8, 2, 2, 2, kSun);
+    block(parent, 8, 10, 2, 2, kSun);
+}
+
+void draw_art_small(lv_obj_t *parent, uint16_t code)
+{
+    if (!parent) return;
+    lv_obj_clean(parent);
+    if (code == 0 || code == 1) {
+        art_sun_small(parent);
+        return;
+    }
+    if (code == 2) {
+        art_sun_small(parent);
+        block(parent, 1, 8, 15, 5, kCloud);
+        return;
+    }
+    if (code == 3) {
+        block(parent, 1, 5, 16, 5, kCloud);
+        block(parent, 5, 2, 8, 4, kCloud);
+        return;
+    }
+    if (code == 45 || code == 48) {
+        block(parent, 1, 2, 16, 4, kCloud);
+        block(parent, 1, 8, 12, 2, kFog);
+        block(parent, 4, 11, 12, 2, kFog);
+        return;
+    }
+    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
+        block(parent, 1, 2, 16, 4, kCloud);
+        block(parent, 3, 8, 2, 4, kRain);
+        block(parent, 9, 8, 2, 4, kRain);
+        block(parent, 14, 8, 2, 3, kRain);
+        return;
+    }
+    if ((code >= 71 && code <= 77) || code == 85 || code == 86) {
+        block(parent, 1, 2, 16, 4, kCloud);
+        block(parent, 4, 8, 3, 3, kSnow);
+        block(parent, 11, 8, 3, 3, kSnow);
+        return;
+    }
+    if (code >= 95) {
+        block(parent, 1, 2, 16, 4, kCloudDeep);
+        block(parent, 7, 7, 3, 5, kBolt);
+        return;
+    }
+    block(parent, 2, 5, 14, 4, kCloud);
 }
 
 const char *cond_text(uint16_t code) { return home_weather_code_text(code); }
@@ -156,6 +204,16 @@ void fmt_clock(int minutes, char *out, size_t capacity)
         return;
     }
     snprintf(out, capacity, "%02d:%02d", minutes / 60, minutes % 60);
+}
+
+lv_obj_t *icon_cell(lv_obj_t *parent, int x, int y, int w, int h)
+{
+    lv_obj_t *cell = lv_obj_create(parent);
+    lv_obj_remove_style_all(cell);
+    lv_obj_remove_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(cell, x, y);
+    lv_obj_set_size(cell, w, h);
+    return cell;
 }
 
 void build_ui()
@@ -172,67 +230,65 @@ void build_ui()
     ui_pixel_battery_set(&s_battery, bsp_battery_soc());
 
     s_city = ui_pixel_label(s_screen, "", &buddy_font_16, UI_SUCCESS);
-    lv_obj_set_pos(s_city, 132, 28);
-    lv_obj_set_width(s_city, 100);
+    lv_obj_set_pos(s_city, 120, 28);
+    lv_obj_set_width(s_city, 108);
     lv_obj_set_style_text_align(s_city, LV_TEXT_ALIGN_RIGHT, 0);
     lv_label_set_long_mode(s_city, LV_LABEL_LONG_MODE_DOTS);
 
     s_temp = ui_pixel_label(s_screen, "--°", &lv_font_montserrat_32, UI_TEXT);
-    lv_obj_set_pos(s_temp, 12, 36);
+    lv_obj_set_pos(s_temp, 12, 30);
 
     s_cond = ui_pixel_label(s_screen, "暂无数据", &buddy_font_16, UI_DANGER);
-    lv_obj_set_pos(s_cond, 12, 72);
-    lv_obj_set_width(s_cond, 130);
+    lv_obj_set_pos(s_cond, 12, 64);
+    lv_obj_set_width(s_cond, 132);
     lv_label_set_long_mode(s_cond, LV_LABEL_LONG_MODE_DOTS);
 
-    s_art = lv_obj_create(s_screen);
-    lv_obj_remove_style_all(s_art);
-    lv_obj_remove_flag(s_art, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(s_art, 150, 34);
-    lv_obj_set_size(s_art, 44, 36);
+    s_art = icon_cell(s_screen, 150, 28, 44, 36);
 
-    s_sun = ui_pixel_label(s_screen, "", &home_font_12, UI_TEXT_DIM);
-    lv_obj_set_pos(s_sun, 12, 92);
+    s_sun = ui_pixel_label(s_screen, "", &buddy_font_16, UI_TEXT_DIM);
+    lv_obj_set_pos(s_sun, 12, 86);
     lv_obj_set_width(s_sun, 216);
     lv_label_set_long_mode(s_sun, LV_LABEL_LONG_MODE_DOTS);
 
     for (int i = 0; i < 3; ++i) {
-        s_metrics[i] = ui_pixel_label(s_screen, "--", &home_font_12, UI_TEXT_DIM);
-        lv_obj_set_pos(s_metrics[i], 12 + i * 72, 108);
+        s_metrics[i] = ui_pixel_label(s_screen, "--", &buddy_font_16, UI_TEXT_DIM);
+        lv_obj_set_pos(s_metrics[i], 12 + i * 72, 106);
         lv_obj_set_width(s_metrics[i], 72);
         lv_label_set_long_mode(s_metrics[i], LV_LABEL_LONG_MODE_DOTS);
     }
 
-    ui_pixel_panel_create(s_screen, 12, 122, 216, 1, UI_BORDER);
+    ui_pixel_panel_create(s_screen, 12, 128, 216, 1, UI_BORDER);
 
     lv_obj_t *hour_hdr = ui_pixel_label(s_screen, "未来 24 小时", &buddy_font_16, UI_SECONDARY);
-    lv_obj_set_pos(hour_hdr, 12, 126);
+    lv_obj_set_pos(hour_hdr, 12, 130);
 
     for (int i = 0; i < kHourColumns; ++i) {
         const int x = 12 + i * 44;
-        s_hour_time[i] = ui_pixel_label(s_screen, "--:--", &lv_font_montserrat_14, UI_TEXT_DIM);
-        lv_obj_set_pos(s_hour_time[i], x, 148);
-        s_hour_temp[i] = ui_pixel_label(s_screen, "--°", &lv_font_montserrat_14, UI_TEXT);
-        lv_obj_set_pos(s_hour_temp[i], x, 164);
+        s_hour_icon[i] = icon_cell(s_screen, x, 150, 18, 14);
+        s_hour_hour[i] = ui_pixel_label(s_screen, "--", &lv_font_montserrat_14, UI_TEXT);
+        lv_obj_set_pos(s_hour_hour[i], x, 164);
+        s_hour_temp[i] = ui_pixel_label(s_screen, "--°", &lv_font_montserrat_14, UI_TEXT_DIM);
+        lv_obj_set_pos(s_hour_temp[i], x + 20, 164);
     }
 
-    ui_pixel_panel_create(s_screen, 12, 184, 216, 1, UI_BORDER);
+    ui_pixel_panel_create(s_screen, 12, 182, 216, 1, UI_BORDER);
 
     lv_obj_t *day_hdr = ui_pixel_label(s_screen, "未来 3 天", &buddy_font_16, UI_SECONDARY);
-    lv_obj_set_pos(day_hdr, 12, 188);
+    lv_obj_set_pos(day_hdr, 12, 184);
 
     static const char *kDayNames[3] = {"今天", "明天", "后天"};
     for (int i = 0; i < 3; ++i) {
-        const int y = 210 + i * 19;
+        const int y = 204 + i * 20;
         s_day_name[i] = ui_pixel_label(s_screen, kDayNames[i], &buddy_font_16, UI_TEXT_DIM);
         lv_obj_set_pos(s_day_name[i], 12, y);
-        lv_obj_set_width(s_day_name[i], 44);
+        lv_obj_set_width(s_day_name[i], 34);
+        s_day_icon[i] = icon_cell(s_screen, 50, y + 3, 18, 14);
         s_day_cond[i] = ui_pixel_label(s_screen, "--", &buddy_font_16, UI_TEXT);
-        lv_obj_set_pos(s_day_cond[i], 58, y);
-        lv_obj_set_width(s_day_cond[i], 88);
+        lv_obj_set_pos(s_day_cond[i], 74, y);
+        lv_obj_set_width(s_day_cond[i], 76);
         lv_label_set_long_mode(s_day_cond[i], LV_LABEL_LONG_MODE_DOTS);
         s_day_temp[i] = ui_pixel_label(s_screen, "--°/--°", &lv_font_montserrat_14, UI_TEXT);
-        lv_obj_set_pos(s_day_temp[i], 160, y + 1);
+        lv_obj_set_pos(s_day_temp[i], 152, y + 2);
         lv_obj_set_width(s_day_temp[i], 68);
         lv_obj_set_style_text_align(s_day_temp[i], LV_TEXT_ALIGN_RIGHT, 0);
     }
@@ -240,7 +296,97 @@ void build_ui()
     ui_pixel_footer(s_screen, "确定刷新", "长按返回", &buddy_font_16);
 }
 
-void update_ui();
+void update_ui()
+{
+    home_profile_t profile;
+    home_profile_get(&profile);
+    ui_pixel_label_set_text(s_city, profile.city[0] ? profile.city : "未设城市");
+
+    const bool online = WifiManager::GetInstance().IsConnected();
+    home_weather_t current = {};
+    if (home_weather_get(&current)) {
+        char temp[16];
+        snprintf(temp, sizeof(temp), "%d°", (int)current.temp_c);
+        ui_pixel_label_set_text(s_temp, temp);
+        ui_pixel_label_set_text(s_cond, cond_text(current.code));
+        draw_art_big(s_art, current.code);
+
+        char metric[32];
+        snprintf(metric, sizeof(metric), "湿度 %u%%", (unsigned)current.humidity);
+        ui_pixel_label_set_text(s_metrics[0], metric);
+        snprintf(metric, sizeof(metric), "风 %d级", home_weather_beaufort(current.wind_kmh));
+        ui_pixel_label_set_text(s_metrics[1], metric);
+
+        char air_text[24];
+        home_air_quality_label(online, air_text, sizeof(air_text));
+        ui_pixel_label_set_text(s_metrics[2], air_text);
+    } else {
+        ui_pixel_label_set_text(s_temp, "--°");
+        ui_pixel_label_set_text(s_cond, "暂无数据");
+        lv_obj_clean(s_art);
+        ui_pixel_label_set_text(s_metrics[0], "湿度 --");
+        ui_pixel_label_set_text(s_metrics[1], "风 --");
+        ui_pixel_label_set_text(s_metrics[2], "PM2.5 --");
+    }
+
+    home_forecast_t forecast = {};
+    if (home_weather_forecast_get(&forecast)) {
+        char clock[40];
+        if (forecast.sun_valid) {
+            char rise[8], set[8];
+            fmt_clock(forecast.sunrise_min, rise, sizeof(rise));
+            fmt_clock(forecast.sunset_min, set, sizeof(set));
+            snprintf(clock, sizeof(clock), "日出 %s  日落 %s", rise, set);
+        } else {
+            snprintf(clock, sizeof(clock), "日出 --:--  日落 --:--");
+        }
+        ui_pixel_label_set_text(s_sun, clock);
+
+        for (int col = 0; col < kHourColumns; ++col) {
+            char text[12];
+            if (col < forecast.hour_count) {
+                const home_forecast_hour_t *hour = &forecast.hours[col];
+                draw_art_small(s_hour_icon[col], hour->code);
+                snprintf(text, sizeof(text), "%02d", (int)hour->hour);
+                ui_pixel_label_set_text(s_hour_hour[col], text);
+                snprintf(text, sizeof(text), "%d°", (int)hour->temp_c);
+                ui_pixel_label_set_text(s_hour_temp[col], text);
+            } else {
+                lv_obj_clean(s_hour_icon[col]);
+                ui_pixel_label_set_text(s_hour_hour[col], "--");
+                ui_pixel_label_set_text(s_hour_temp[col], "--°");
+            }
+        }
+
+        for (int i = 0; i < 3; ++i) {
+            if (i < forecast.day_count) {
+                const home_forecast_day_t *day = &forecast.days[i];
+                draw_art_small(s_day_icon[i], day->code);
+                ui_pixel_label_set_text(s_day_cond[i], cond_text(day->code));
+                char text[20];
+                // 高/低温：先高后低。
+                snprintf(text, sizeof(text), "%d°/%d°", (int)day->tmax_c, (int)day->tmin_c);
+                ui_pixel_label_set_text(s_day_temp[i], text);
+            } else {
+                lv_obj_clean(s_day_icon[i]);
+                ui_pixel_label_set_text(s_day_cond[i], "--");
+                ui_pixel_label_set_text(s_day_temp[i], "--°/--°");
+            }
+        }
+    } else {
+        ui_pixel_label_set_text(s_sun, "日出 --:--  日落 --:--");
+        for (int col = 0; col < kHourColumns; ++col) {
+            lv_obj_clean(s_hour_icon[col]);
+            ui_pixel_label_set_text(s_hour_hour[col], "--");
+            ui_pixel_label_set_text(s_hour_temp[col], "--°");
+        }
+        for (int i = 0; i < 3; ++i) {
+            lv_obj_clean(s_day_icon[i]);
+            ui_pixel_label_set_text(s_day_cond[i], "--");
+            ui_pixel_label_set_text(s_day_temp[i], "--°/--°");
+        }
+    }
+}
 
 void refresh_done()
 {
@@ -273,96 +419,6 @@ void start_refresh()
         s_busy = false;
         s_task = nullptr;
         ESP_LOGW(kTag, "Unable to start refresh task");
-    }
-}
-
-void set_text(lv_obj_t *label, const char *text)
-{
-    if (label) ui_pixel_label_set_text(label, text);
-}
-
-void update_ui()
-{
-    home_profile_t profile;
-    home_profile_get(&profile);
-    set_text(s_city, profile.city[0] ? profile.city : "未设城市");
-
-    home_weather_t current = {};
-    const bool online = WifiManager::GetInstance().IsConnected();
-    if (home_weather_get(&current)) {
-        char temp[16];
-        snprintf(temp, sizeof(temp), "%d°", (int)current.temp_c);
-        set_text(s_temp, temp);
-        set_text(s_cond, cond_text(current.code));
-        draw_art(current.code);
-
-        char metric[32];
-        snprintf(metric, sizeof(metric), "湿度 %u%%", (unsigned)current.humidity);
-        set_text(s_metrics[0], metric);
-        snprintf(metric, sizeof(metric), "风 %d级", home_weather_beaufort(current.wind_kmh));
-        set_text(s_metrics[1], metric);
-
-        char air_text[24];
-        home_air_quality_label(online, air_text, sizeof(air_text));
-        set_text(s_metrics[2], air_text);
-    } else {
-        set_text(s_temp, "--°");
-        set_text(s_cond, "暂无数据");
-        lv_obj_clean(s_art);
-        set_text(s_metrics[0], "湿度 --");
-        set_text(s_metrics[1], "风 --");
-        set_text(s_metrics[2], "PM2.5 --");
-    }
-
-    home_forecast_t forecast = {};
-    if (home_weather_forecast_get(&forecast)) {
-        char clock[40];
-        if (forecast.sun_valid) {
-            char rise[8], set[8];
-            fmt_clock(forecast.sunrise_min, rise, sizeof(rise));
-            fmt_clock(forecast.sunset_min, set, sizeof(set));
-            snprintf(clock, sizeof(clock), "日出 %s  日落 %s", rise, set);
-        } else {
-            snprintf(clock, sizeof(clock), "日出 --:--  日落 --:--");
-        }
-        set_text(s_sun, clock);
-
-        for (int col = 0; col < kHourColumns; ++col) {
-            char text[12];
-            if (col < forecast.hour_count) {
-                const home_forecast_hour_t *hour = &forecast.hours[col];
-                snprintf(text, sizeof(text), "%02d:00", (int)hour->hour);
-                set_text(s_hour_time[col], text);
-                snprintf(text, sizeof(text), "%d°", (int)hour->temp_c);
-                set_text(s_hour_temp[col], text);
-            } else {
-                set_text(s_hour_time[col], "--:--");
-                set_text(s_hour_temp[col], "--°");
-            }
-        }
-
-        for (int i = 0; i < 3; ++i) {
-            if (i < forecast.day_count) {
-                const home_forecast_day_t *day = &forecast.days[i];
-                set_text(s_day_cond[i], cond_text(day->code));
-                char text[20];
-                snprintf(text, sizeof(text), "%d°/%d°", (int)day->tmin_c, (int)day->tmax_c);
-                set_text(s_day_temp[i], text);
-            } else {
-                set_text(s_day_cond[i], "--");
-                set_text(s_day_temp[i], "--°/--°");
-            }
-        }
-    } else {
-        set_text(s_sun, "日出 --:--  日落 --:--");
-        for (int col = 0; col < kHourColumns; ++col) {
-            set_text(s_hour_time[col], "--:--");
-            set_text(s_hour_temp[col], "--°");
-        }
-        for (int i = 0; i < 3; ++i) {
-            set_text(s_day_cond[i], "--");
-            set_text(s_day_temp[i], "--°/--°");
-        }
     }
 }
 
@@ -415,9 +471,11 @@ static void weather_stop(void)
         s_city = s_temp = s_cond = s_sun = s_art = nullptr;
         for (int i = 0; i < 3; ++i) {
             s_metrics[i] = nullptr;
-            s_day_name[i] = s_day_cond[i] = s_day_temp[i] = nullptr;
+            s_day_name[i] = s_day_cond[i] = s_day_temp[i] = s_day_icon[i] = nullptr;
         }
-        for (int i = 0; i < kHourColumns; ++i) s_hour_time[i] = s_hour_temp[i] = nullptr;
+        for (int i = 0; i < kHourColumns; ++i) {
+            s_hour_icon[i] = s_hour_hour[i] = s_hour_temp[i] = nullptr;
+        }
         s_wifi[0] = s_wifi[1] = s_wifi[2] = nullptr;
     }
     bsp_lvgl_unlock();
@@ -429,10 +487,6 @@ static void weather_on_key(uint8_t btn, app_btn_event_t event, uint16_t mv)
     (void)mv;
     if (btn == BSP_BTN_OK && event == BTN_EVT_LONG) {
         app_registry_switch_to(APP_ID_LAUNCHER);
-        return;
-    }
-    if (btn == BSP_BTN_OK && event == BTN_EVT_CLICK) {
-        start_refresh();
         return;
     }
     if (event == BTN_EVT_CLICK) start_refresh();
