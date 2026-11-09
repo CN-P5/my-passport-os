@@ -63,7 +63,7 @@ details{border-top:1px solid var(--line);padding:20px 0}summary{cursor:pointer;f
 <div id="photoTools" class="photo-tools" hidden>
 <fieldset class="portrait-presets"><legend>人像风格</legend><div class="portrait-segments">
 <label><input type="radio" name="portraitPreset" id="portraitPresetDot" value="1"><span>点阵</span></label>
-<label><input type="radio" name="portraitPreset" id="portraitPresetFlat" value="2"><span>平涂</span></label>
+<label><input type="radio" name="portraitPreset" id="portraitPresetFlat" value="2"><span>平涂</span></label><label><input type="radio" name="portraitPreset" id="portraitPresetComic" value="4"><span>漫画线稿</span></label><label><input type="radio" name="portraitPreset" id="portraitPresetSilhouette" value="5"><span>剪影</span></label><label><input type="radio" name="portraitPreset" id="portraitPresetScreen" value="6"><span>网点印刷</span></label>
 <label><input type="radio" name="portraitPreset" id="portraitPresetHybrid" value="3" checked><span>平涂＋局部点阵</span></label>
 </div><label for="pscheme" class="caption">人像配色</label><select id="pscheme"><option value="0">主题墨色</option><option value="1">彩色海报</option><option value="2">暖色</option><option value="3">冷色</option></select><p class="help">人像按四色调存储，"彩色海报"是四色海报化，不是全彩照片；保存后重新进入本页可看到彩色预览。</p></fieldset>
 <div class="crop-layout"><div id="vp" style="height:276px"><img id="pv" alt="人像取景预览"></div><div><canvas id="binc" width="96" height="138" style="height:138px" aria-label="设备人像预览"></canvas><p class="caption">设备效果</p></div></div><label for="zm" class="caption">缩放人像</label><input type="range" id="zm" min="100" max="400" value="100"><label for="portraitBrightness" class="caption">明暗</label><input type="range" id="portraitBrightness" min="-48" max="48" value="0" style="width:100%;min-height:40px"><label><input type="checkbox" id="portraitBackground"> 去除纯色背景</label></div>
@@ -243,6 +243,16 @@ function portraitLevels(data,w,h,removeBackground,brightness,preset=3){
  for(let p=0;p<levels.length;p++)if(mask[p]){
   const x=p%w,y=Math.floor(p/w),v=Math.max(0,Math.min(255,gray[p]+brightness)),t=(bayer[(y%4)*4+x%4]+.5)/16;
   if(preset===1){const edge=(x>0&&!mask[p-1])||(x<w-1&&!mask[p+1])||(y>0&&!mask[p-w])||(y<h-1&&!mask[p+w]);levels[p]=.13+.78*(v/255)**.95>t||(edge&&(x+y)%3===0)?3:0}
+  else if(preset===4){
+    // 漫画线稿：先找亮度梯度当墨线（含轮廓处），其余按四阶平涂，五官才不会糊。
+    const l=p>0&&mask[p-1]?gray[p-1]:v,r=x<w-1&&mask[p+1]?gray[p+1]:v;
+    const u=y>0&&mask[p-w]?gray[p-w]:v,d=y<h-1&&mask[p+w]?gray[p+w]:v;
+    const rim=(x>0&&!mask[p-1])||(x<w-1&&!mask[p+1])||(y>0&&!mask[p-w])||(y<h-1&&!mask[p+w]);
+    const edge=rim||Math.abs(r-l)+Math.abs(d-u)>46;
+    levels[p]=edge?0:(v<66?0:v<132?1:v<198?2:3);
+  }
+  else if(preset===5){levels[p]=v<124?0:3}                      // 剪影：单一阈值，靠轮廓认人
+  else if(preset===6){levels[p]=Math.min(3,Math.floor(v/85+t))}  // 网点：4×4 Bayer 有序抖动
   else{const value=v+(preset===3?(t-.5)*34:0);levels[p]=value<57?0:value<124?1:value<190?2:3}
  }return {levels,mask};
 }
@@ -255,8 +265,9 @@ function portraitColor(packed,p){
  return !visible||(packed[4]===1&&!level)?portraitPalette[0]:portraitSubjectPalette[level];
 }
 function previewPortrait(){if(!portrait)return;const packed=portraitPacked(),g=$('binc').getContext('2d'),o=g.createImageData(PORTRAIT.w,PORTRAIT.h);for(let p=0;p<PORTRAIT.w*PORTRAIT.h;p++){const color=portraitColor(packed,p),i=p*4;o.data[i]=color>>16;o.data[i+1]=(color>>8)&255;o.data[i+2]=color&255;o.data[i+3]=255}g.putImageData(o,0,0)}
-function setPortraitPreset(value){portraitPreset=[1,2,3].includes(value)?value:3;for(const [i,id] of ['portraitPresetDot','portraitPresetFlat','portraitPresetHybrid'].entries())$(id).checked=portraitPreset===i+1;previewPortrait()}
-for(const [i,id] of ['portraitPresetDot','portraitPresetFlat','portraitPresetHybrid'].entries())$(id).onchange=()=>{if($(id).checked)setPortraitPreset(i+1)};
+const PORTRAIT_PRESETS=[1,2,4,5,6,3],PORTRAIT_PRESET_IDS=['portraitPresetDot','portraitPresetFlat','portraitPresetComic','portraitPresetSilhouette','portraitPresetScreen','portraitPresetHybrid'];
+function setPortraitPreset(value){portraitPreset=PORTRAIT_PRESETS.includes(value)?value:3;for(const [i,id] of PORTRAIT_PRESET_IDS.entries())$(id).checked=portraitPreset===PORTRAIT_PRESETS[i];previewPortrait()}
+for(const [i,id] of PORTRAIT_PRESET_IDS.entries())$(id).onchange=()=>{if($(id).checked)setPortraitPreset(PORTRAIT_PRESETS[i])};
 $('portraitBrightness').oninput=previewPortrait;$('portraitBackground').onchange=previewPortrait;
 async function imageFile(input){const file=input.files[0];if(!file)return null;if(!file.size)throw new Error('图片文件为空，请重新选择。');if(file.size>20*1024*1024)throw new Error('图片超过 20 MB，请选择较小的图片。');const url=URL.createObjectURL(file);let timer;imageLoading++;try{const img=new Image();await new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(new Error('读取图片超时，请将图片保存到手机本地后重试。')),15000);img.onload=resolve;img.onerror=()=>reject(new Error('无法读取图片，请换一张 JPEG 或 PNG 图片。'));img.src=url});if(!img.naturalWidth||!img.naturalHeight)throw new Error('图片尺寸无效，请重新选择。');return img}catch(e){URL.revokeObjectURL(url);throw e}finally{clearTimeout(timer);imageLoading--}}
 async function selectPortrait(input){say('avatarStatus','正在读取图片…');try{const img=await imageFile(input);if(!img){say('avatarStatus',portrait?'已保留之前选择的人像。':'未选择图片。');return}if(portrait)URL.revokeObjectURL(portrait.src);portrait=img;$('pv').src=img.src;base=Math.max(VP.w/img.naturalWidth,VP.h/img.naturalHeight);zoom=1;$('zm').value=100;ox=(VP.w-img.naturalWidth*base)/2;oy=(VP.h-img.naturalHeight*base)/2;clamp();previewPortrait();$('photoTools').hidden=false;say('avatarStatus','已选择，将在完成设置时保存。')}catch(e){input.value='';say('avatarStatus',e.message,true)}}
