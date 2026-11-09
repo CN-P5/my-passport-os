@@ -43,6 +43,10 @@ uint32_t ui_theme_color(ui_color_role_t role);
 uint32_t ui_theme_color_on_dark(ui_color_role_t role);
 uint32_t ui_theme_portrait_color(uint8_t level);
 uint32_t ui_theme_portrait_subject_color(uint8_t level);
+// 人像配色方案：0=主题墨色(默认) 1=彩色海报 2=暖色 3=冷色。
+// 人像用 2-bit 蒙版存 4 个色调，"彩色"是 4 色海报化，不是全彩照片。
+void ui_pixel_set_portrait_scheme(uint8_t scheme);
+uint8_t ui_pixel_portrait_scheme(void);
 const char *ui_theme_name(ui_theme_t theme);
 
 #ifdef __cplusplus

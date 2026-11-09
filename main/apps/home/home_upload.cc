@@ -120,6 +120,8 @@ static esp_err_t handler_profile_get(httpd_req_t *req) {
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "name", profile.name);
     cJSON_AddStringToObject(root, "brand", profile.brand);
+    cJSON_AddNumberToObject(root, "scene", profile.scene);
+    cJSON_AddNumberToObject(root, "portrait_scheme", profile.portrait_scheme);
     cJSON_AddStringToObject(root, "signature", profile.signature);
     cJSON_AddStringToObject(root, "city", profile.city);
     cJSON_AddStringToObject(root, "address", profile.address);
@@ -181,6 +183,14 @@ static esp_err_t handler_profile_post(httpd_req_t *req) {
         grab("region", in.region, HOME_REGION_MAX) &&
         grab("radio_city", in.radio_city, HOME_CITY_MAX) &&
         grab("country_code", in.country_code, sizeof(in.country_code));
+    const auto grab_choice = [&](const char *key, uint8_t max_value, uint8_t *dst) {
+        const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
+        if (!cJSON_IsNumber(item)) return;
+        const int value = item->valueint;
+        *dst = (uint8_t)(value < 0 || value > max_value ? 0 : value);
+    };
+    grab_choice("scene", 5, &in.scene);
+    grab_choice("portrait_scheme", 3, &in.portrait_scheme);
     cJSON_Delete(root);
     if (!valid) return send_json(req, 400, "{\"error\":\"text too long\"}");
 

@@ -27,6 +27,14 @@ esp_err_t nvs_set_str(nvs_handle_t h,const char *key,const char *value) {
     (void)h;if(!strcmp(key,"portrait_v2")){assert(strlen(value)==1);strcpy(avatar_pending,value);avatar_dirty=true;return ESP_OK;}
     assert(!strcmp(key,"cards_v1"));assert(strlen(value)<sizeof(pending));strcpy(pending,value);cards_dirty=true;return ESP_OK;
 }
+esp_err_t nvs_get_u8(nvs_handle_t h, const char *key, uint8_t *out) {
+    (void)h; (void)key; (void)out;
+    return ESP_ERR_NVS_NOT_FOUND;
+}
+esp_err_t nvs_set_u8(nvs_handle_t h, const char *key, uint8_t value) {
+    (void)h; (void)key; (void)value;
+    return ESP_OK;
+}
 esp_err_t nvs_commit(nvs_handle_t h) { (void)h;if(fail_commit)return ESP_FAIL;if(cards_dirty){strcpy(stored,pending);has_order=true;}if(avatar_dirty){strcpy(avatar_stored,avatar_pending);avatar_saved=true;}return ESP_OK; }
 esp_err_t esp_vfs_spiffs_register(const esp_vfs_spiffs_conf_t *c) { assert(c->max_files==4);return ESP_OK; }
 void vTaskDelay(unsigned ticks) { (void)ticks; }

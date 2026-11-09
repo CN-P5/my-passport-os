@@ -23,13 +23,13 @@
 //   左卡(104×202):人像区(96×140,头像经亮度阈值转 A8 单色) + 姓名 + 签名;
 //   右列(120 宽):点阵时钟卡(5×7 字模,每格画 4×4 光点) / 日期+城市+Wi-Fi 卡 /
 //                天气卡(单色图标 + 温度 + 短语 + 分隔线 + 风向·风级);
-//   底部:240×108 A8 艺术底图全宽出血(tools/gen_band_art.py 生成,内置两张,
+//   底部:240×52 彩色像素场景(海边/城镇/山峰/天空/沙漠,代码现画,2026-11 由 A8
+//        单色底图改为彩色；长按上键可手动切换,手机配网页可选固定或自动轮换)。
 //        长按上键切换),电池悬浮在底图右上,按键提示压在底图下缘黑条上。
 //   美术显示走 LVGL A8 快速路径(alpha 蒙版 + image_recolor 纯色),已核对
 //   lv_draw_sw_img.c:233 与 lv_draw_sw_blend_to_rgb565.c。
 #include "apps/home/app_home.h"
 
-#include "apps/home/band_art.h"
 #include "apps/home/home_clock.h"
 #include "apps/home/home_profile.h"
 #include "apps/home/home_upload.h"
@@ -76,9 +76,9 @@ LV_FONT_DECLARE(lv_font_unscii_8);
 #define kPhos (ui_theme_color(UI_COLOR_TEXT))
 #define kPhosDim (ui_theme_color(UI_COLOR_TEXT_DIM))
 #define kPhosBorder (ui_theme_color(UI_COLOR_BORDER))
-#define kClock (ui_theme_get() == UI_THEME_NEON ? UI_ACCENT : ui_theme_get() == UI_THEME_PLAYFUL ? ui_theme_color(UI_COLOR_SECONDARY) : kPhos)
+#define kClock (ui_theme_get() == UI_THEME_NEON ? UI_ACCENT : UI_ACCENT)
 #define kBand (ui_theme_get() == UI_THEME_NEON ? UI_SECONDARY : ui_theme_get() == UI_THEME_PLAYFUL ? ui_theme_color(UI_COLOR_SUCCESS) : UI_AMBER)
-#define kTemperature (ui_theme_is_multicolor() ? ui_theme_color(UI_COLOR_TERTIARY) : kPhos)
+#define kTemperature (ui_theme_is_multicolor() ? ui_theme_color(UI_COLOR_TERTIARY) : UI_AMBER)
 #define kWeatherAccent (ui_theme_color(ui_theme_get() == UI_THEME_NEON ? UI_COLOR_SUCCESS : UI_COLOR_ACCENT))
 
 // 兼容既有更新函数的语义色:磷光风格里"强调/在线"都是亮绿,弱化都是暗绿。
@@ -166,7 +166,6 @@ lv_obj_t *s_portrait_ph = nullptr;     // 无头像占位文字
 lv_obj_t *s_lbl_date = nullptr;
 lv_obj_t *s_wifi_bars[3] = {nullptr, nullptr, nullptr};
 ui_pixel_battery_t s_batt = {nullptr, nullptr};
-lv_obj_t *s_band_img = nullptr;        // 底部艺术底图
 bool s_share_visible = false;
 uint8_t s_share_index = 0;
 
@@ -189,9 +188,10 @@ lv_obj_t *s_lbl_feels = nullptr;     // 体感 (网格第 2 行左)
 lv_obj_t *s_lbl_stat = nullptr;      // 状态 (网格第 2 行右)
 lv_obj_t *s_lbl_footer = nullptr;
 
-// 底部艺术底图:0=城市夜景 1=山湖月色(均内置 flash);将来可扩展用户上传槽。
-uint8_t s_band_index = 0;
-lv_image_dsc_t s_band_dsc[2];
+// 底部彩色场景：0=海边 1=城镇 2=山峰 3=天空 4=沙漠，按需现画不上图床。
+// scene 配置为"自动"时按日期轮换；长按上键可手动切。
+int s_scene = 0;
+bool s_scene_auto = true;
 
 // ---- 天气像素图标(画在 s_wicon_zone 内,全部是色块) ----
 constexpr int kWiMax = 12;
@@ -653,6 +653,14 @@ void apply_profile(const home_profile_t *prof) {
     lv_label_set_text(s_lbl_name, prof->name[0] ? prof->name : "未设置姓名");
     lv_label_set_text(s_lbl_sig, prof->signature[0] ? prof->signature : "未设置签名");
     if (s_lbl_brand) lv_label_set_text(s_lbl_brand, prof->brand);
+    ui_pixel_set_portrait_scheme(prof->portrait_scheme);
+    if (s_portrait_packed && s_portrait_pixels) {
+        expand_portrait();
+        if (s_avatar_img) lv_obj_invalidate(s_avatar_img);
+    }
+    s_scene_auto = prof->scene == 0;
+    if (prof->scene) s_scene = prof->scene - 1;
+    if (s_screen) lv_obj_invalidate(s_screen);
     refresh_weather_ui();
 }
 
@@ -663,6 +671,99 @@ lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, uint32_t color,
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
     lv_obj_set_style_text_align(label, align, 0);
     return label;
+}
+
+// ---- 底部彩色场景 (x0..240, y240..292) ----
+constexpr int kSceneTop = 240;
+constexpr int kSceneH = 52;
+
+void scene_px(pixel_scene::Ink &ink, int x, int y, int w, int h, uint32_t color) {
+    ink.box(x, y, w, h, color);
+}
+
+// 天空渐变：用 3 段色带近似，省掉逐行绘制。
+void scene_sky(pixel_scene::Ink &ink, uint32_t upper, uint32_t lower) {
+    scene_px(ink, 0, kSceneTop, 240, 18, upper);
+    scene_px(ink, 0, kSceneTop + 18, 240, 18, lower);
+}
+
+void scene_seaside(pixel_scene::Ink &ink) {
+    scene_sky(ink, 0x2A4A6B, 0xD98A5B);
+    scene_px(ink, 176, kSceneTop + 12, 16, 16, 0xF7C948);
+    scene_px(ink, 180, kSceneTop + 8, 8, 8, 0xF7C948);
+    scene_px(ink, 0, kSceneTop + 36, 240, 10, 0x2E6E8E);
+    scene_px(ink, 0, kSceneTop + 46, 240, 6, 0x1F4F63);
+    for (int i = 0; i < 8; ++i) scene_px(ink, i * 32 + 6, kSceneTop + 38, 12, 2, 0xEAF2FA);
+    scene_px(ink, 0, kSceneTop + 50, 240, 2, 0xD8B36A);
+}
+
+void scene_town(pixel_scene::Ink &ink) {
+    scene_sky(ink, 0x101B33, 0x1B2B4A);
+    scene_px(ink, 196, kSceneTop + 6, 10, 10, 0xF2E8B0);
+    static const int hs[] = {14, 22, 10, 26, 18, 12, 20, 16};
+    for (int i = 0; i < 8; ++i) {
+        const int w = 24 + (i % 2) * 6;
+        const int h = hs[i];
+        const int x = i * 30;
+        scene_px(ink, x, kSceneTop + 36 - h, w, h + 8, i % 2 ? 0x0B1526 : 0x14203A);
+        for (int wy = 0; wy < h - 6; wy += 6)
+            for (int wx = 0; wx < w - 8; wx += 8)
+                if (((wx + wy + i) % 16) == 0) scene_px(ink, x + 4 + wx, kSceneTop + 40 - h + wy, 3, 3, 0xF2B93B);
+    }
+    scene_px(ink, 0, kSceneTop + 44, 240, 8, 0x1B2434);
+}
+
+void scene_mountain(pixel_scene::Ink &ink) {
+    scene_sky(ink, 0x2B4A6F, 0x9EC3D9);
+    for (int step = 0; step < 18; ++step) {
+        const int y = kSceneTop + 46 - step;
+        scene_px(ink, 30 + step * 2, y, 2, 1, 0x3A4A5A);
+        scene_px(ink, 66 - step * 2, y, 2, 1, 0x3A4A5A);
+        scene_px(ink, 150 + step, y, 2, 1, 0x596B7B);
+    }
+    scene_px(ink, 30, kSceneTop + 4, 2, 26, 0x3A4A5A);
+    scene_px(ink, 24, kSceneTop + 2, 14, 4, 0xEAF2FA);
+    scene_px(ink, 0, kSceneTop + 46, 240, 6, 0x2E6E8E);
+}
+
+void scene_sky_scene(pixel_scene::Ink &ink) {
+    scene_sky(ink, 0x8FC7E8, 0xC9E4F2);
+    scene_px(ink, 24, kSceneTop + 12, 34, 6, 0xF4F8FB);
+    scene_px(ink, 32, kSceneTop + 8, 18, 6, 0xF4F8FB);
+    scene_px(ink, 150, kSceneTop + 30, 40, 6, 0xF4F8FB);
+    scene_px(ink, 160, kSceneTop + 26, 20, 6, 0xF4F8FB);
+    scene_px(ink, 104, kSceneTop + 10, 20, 16, 0xE05C6E);
+    scene_px(ink, 108, kSceneTop + 26, 12, 8, 0xE05C6E);
+    scene_px(ink, 112, kSceneTop + 34, 4, 4, 0xF2C14E);
+}
+
+void scene_desert(pixel_scene::Ink &ink) {
+    scene_sky(ink, 0xF2CE92, 0xE8B06A);
+    scene_px(ink, 40, kSceneTop + 10, 14, 14, 0xF7C948);
+    scene_px(ink, 0, kSceneTop + 38, 240, 14, 0xD89A5C);
+    scene_px(ink, 60, kSceneTop + 34, 120, 8, 0xC07A3E);
+    scene_px(ink, 186, kSceneTop + 20, 4, 20, 0x3E7C4F);
+    scene_px(ink, 182, kSceneTop + 26, 4, 4, 0x3E7C4F);
+    scene_px(ink, 190, kSceneTop + 30, 4, 4, 0x3E7C4F);
+}
+
+// 自动模式按"今天是一年中的第几天"轮换，保证同一天多次进入首页画面固定。
+int scene_index(void) {
+    if (!s_scene_auto) return s_scene % 5;
+    const time_t now = time(nullptr);
+    struct tm local {};
+    if (now > 1700000000 && localtime_r(&now, &local) != nullptr) return local.tm_yday % 5;
+    return 0;
+}
+
+void draw_scene(pixel_scene::Ink &ink) {
+    switch (scene_index()) {
+        case 0: scene_seaside(ink); break;
+        case 1: scene_town(ink); break;
+        case 2: scene_mountain(ink); break;
+        case 3: scene_sky_scene(ink); break;
+        default: scene_desert(ink); break;
+    }
 }
 
 // Passport paper details are drawn on demand without retained child objects.
@@ -679,6 +780,7 @@ void draw_passport_details(lv_event_t *event) {
     ink.box(42, 172, 60, 1, kPhosBorder);
     for (int i = 0; i < 18; ++i) ink.box(14 + i * 5, 226, i % 3 ? 1 : 2, i % 4 ? 5 : 8, kPhosBorder);
     ink.box(120, 162, 110, 1, kPhosBorder);
+    draw_scene(ink);
 }
 
 void create_ui() {
@@ -698,7 +800,7 @@ void create_ui() {
     s_batt = ui_pixel_battery_create(s_screen, 206, 6, kPhos, &lv_font_montserrat_14);
 
     // 顶栏品牌文字：默认空 = 不显示，用户在手机配网页里填了才出现。
-    s_lbl_brand = ui_pixel_label(s_screen, "", &lv_font_montserrat_14, kPhosDim);
+    s_lbl_brand = ui_pixel_label(s_screen, "", &buddy_font_16, kPhosDim);
     lv_obj_set_pos(s_lbl_brand, 42, 4);
     lv_obj_set_width(s_lbl_brand, 150);
     lv_label_set_long_mode(s_lbl_brand, LV_LABEL_LONG_MODE_DOTS);
@@ -748,7 +850,7 @@ void create_ui() {
     s_clk_colon[1] = px_block(s_clk_slots[2], 0, 21, 4, 4, kClock);
 
     // 日期下移至 y=76，离开大时钟底部拉开 9px 舒适间距
-    s_lbl_date = make_label(s_screen, &buddy_font_16, kPhos, LV_TEXT_ALIGN_LEFT);
+    s_lbl_date = make_label(s_screen, &buddy_font_16, ui_theme_color(UI_COLOR_SECONDARY), LV_TEXT_ALIGN_LEFT);
     lv_obj_set_width(s_lbl_date, 114);
     lv_obj_set_pos(s_lbl_date, 120, 77);
 
@@ -777,17 +879,17 @@ void create_ui() {
     lv_label_set_long_mode(s_lbl_wtext, LV_LABEL_LONG_MODE_DOTS);
 
     // 三行垂直清晰气象指标 (y=170, 192, 214), 采用 16px buddy_font_16，舒适清晰
-    s_lbl_humidity = make_label(s_screen, &buddy_font_16, kPhosDim, LV_TEXT_ALIGN_LEFT);
+    s_lbl_humidity = make_label(s_screen, &buddy_font_16, ui_theme_color(UI_COLOR_SUCCESS), LV_TEXT_ALIGN_LEFT);
     lv_obj_set_pos(s_lbl_humidity, 118, 170);
     lv_obj_set_size(s_lbl_humidity, 112, 20);
     lv_label_set_long_mode(s_lbl_humidity, LV_LABEL_LONG_MODE_DOTS);
 
-    s_lbl_wind = make_label(s_screen, &buddy_font_16, kPhosDim, LV_TEXT_ALIGN_LEFT);
+    s_lbl_wind = make_label(s_screen, &buddy_font_16, ui_theme_color(UI_COLOR_SECONDARY), LV_TEXT_ALIGN_LEFT);
     lv_obj_set_pos(s_lbl_wind, 118, 192);
     lv_obj_set_size(s_lbl_wind, 112, 20);
     lv_label_set_long_mode(s_lbl_wind, LV_LABEL_LONG_MODE_DOTS);
 
-    s_lbl_stat = make_label(s_screen, &buddy_font_16, kPhosDim, LV_TEXT_ALIGN_LEFT);
+    s_lbl_stat = make_label(s_screen, &buddy_font_16, UI_AMBER, LV_TEXT_ALIGN_LEFT);
     lv_obj_set_pos(s_lbl_stat, 118, 214);
     lv_obj_set_size(s_lbl_stat, 112, 20);
     lv_label_set_long_mode(s_lbl_stat, LV_LABEL_LONG_MODE_DOTS);
@@ -800,11 +902,6 @@ void create_ui() {
     lv_label_set_text(s_lbl_stat, "PM2.5 --");
     ui_pixel_label_set_text(s_lbl_wind, "风向 --");
 
-    // ---- 底部艺术底图 (y240..320):A8 alpha 图 + 磷光绿 recolor,全宽出血 ----
-    s_band_img = lv_image_create(s_screen);
-    lv_image_set_src(s_band_img, &s_band_dsc[s_band_index]);
-    lv_obj_set_pos(s_band_img, 0, 240);
-    lv_obj_set_style_image_recolor(s_band_img, lv_color_hex(kBand), 0);
 
     // ---- 按键提示:底黑条 + 1px 细分隔线 + 提拉 6px 安全边距 ----
     px_block(s_screen, 0, 292, 240, 1, kPhosBorder);
@@ -997,11 +1094,10 @@ void toggle_share_view() {
 }
 
 // 长按上键:循环切换底部艺术底图(城市夜景 → 山湖月色;将来加入用户上传槽)。
-void band_art_next(void) {
-    s_band_index = (s_band_index + 1) % 2;
-    if (s_band_img) {
-        lv_image_set_src(s_band_img, &s_band_dsc[s_band_index]);
-    }
+void scene_next(void) {
+    s_scene_auto = false;
+    s_scene = (s_scene + 1) % 5;
+    if (s_screen) lv_obj_invalidate(s_screen);
 }
 
 void home_task(void *arg) {
@@ -1141,19 +1237,6 @@ void home_init() {
     s_portrait_dsc.data_size = HOME_PORTRAIT_I4_BYTES;
     s_portrait_dsc.data = s_portrait_pixels;
 
-    // 内置底图(A8,数据在 flash,零 RAM 占用)
-    const uint8_t *band_data[2] = {kBandArtCity, kBandArtMountain};
-    for (int i = 0; i < 2; ++i) {
-        s_band_dsc[i].header.magic = LV_IMAGE_HEADER_MAGIC;
-        s_band_dsc[i].header.cf = LV_COLOR_FORMAT_A8;
-        s_band_dsc[i].header.flags = 0;
-        s_band_dsc[i].header.w = BAND_ART_W;
-        s_band_dsc[i].header.h = BAND_ART_H;
-        s_band_dsc[i].header.stride = BAND_ART_W;
-        s_band_dsc[i].data_size = BAND_ART_W * BAND_ART_H;
-        s_band_dsc[i].data = band_data[i];
-    }
-
     ESP_LOGI(kTag, "Home app subsystems ready");
 }
 
@@ -1233,7 +1316,6 @@ void home_stop() {
     s_lbl_date = nullptr;
     for (lv_obj_t *&bar : s_wifi_bars) bar = nullptr;
     s_batt = {nullptr, nullptr};
-    s_band_img = nullptr;
     for (lv_obj_t *&slot : s_clk_slots) slot = nullptr;
     for (lv_obj_t *&dot : s_clk_colon) dot = nullptr;
     std::memset(s_clk_slot_char, 0, sizeof(s_clk_slot_char));
@@ -1288,7 +1370,7 @@ void home_on_key(uint8_t btn, app_btn_event_t event, uint16_t mv) {
     if (btn == BSP_BTN_UP && event == BTN_EVT_LONG) {
         if (s_share_visible) return;
         bsp_lvgl_lock(-1);
-        band_art_next();
+        scene_next();
         bsp_lvgl_unlock();
         return;
     }

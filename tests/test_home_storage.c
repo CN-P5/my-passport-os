@@ -47,6 +47,14 @@ esp_err_t nvs_get_str(nvs_handle_t h, const char *key, char *out, size_t *n) {
     (void)h; (void)key; (void)out; (void)n;
     return ESP_ERR_NVS_NOT_FOUND;
 }
+esp_err_t nvs_get_u8(nvs_handle_t h, const char *key, uint8_t *out) {
+    (void)h; (void)key; (void)out;
+    return ESP_ERR_NVS_NOT_FOUND;
+}
+esp_err_t nvs_set_u8(nvs_handle_t h, const char *key, uint8_t value) {
+    (void)h; (void)key; (void)value;
+    return ESP_OK;
+}
 esp_err_t nvs_commit(nvs_handle_t h) { (void)h; ++commits; return ESP_OK; }
 esp_err_t nvs_set_str(nvs_handle_t h, const char *key, const char *value) {
     (void)h;

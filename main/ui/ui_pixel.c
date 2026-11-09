@@ -88,8 +88,21 @@ uint32_t ui_theme_color_on_dark(ui_color_role_t role)
     if ((unsigned)role >= UI_COLOR_COUNT) role = UI_COLOR_TEXT;
     return s_palettes[s_ui_theme][1][role];
 }
+// 人像配色方案（0=主题墨色）。2-bit 蒙版只有 4 个色调，所以"彩色"是四色海报化。
+static uint8_t s_portrait_scheme = 0;
+static const uint32_t kPortraitSchemes[4][4] = {
+    {0x000000, 0x000000, 0x000000, 0x000000}, /* 0 占位：走主题 */
+    {0x1B2A4A, 0x35618F, 0xE0A02A, 0xF6E7C8}, /* 1 彩色海报 */
+    {0x3A1F16, 0x8C4A2F, 0xE0A15C, 0xF7E3C0}, /* 2 暖色 */
+    {0x16222E, 0x2F5C74, 0x86BFC9, 0xE8F4F4}, /* 3 冷色 */
+};
+void ui_pixel_set_portrait_scheme(uint8_t scheme) { s_portrait_scheme = scheme > 3 ? 0 : scheme; }
+uint8_t ui_pixel_portrait_scheme(void) { return s_portrait_scheme; }
+
 uint32_t ui_theme_portrait_color(uint8_t level)
 {
+    if (level > 3) level = 3;
+    if (s_portrait_scheme) return kPortraitSchemes[s_portrait_scheme][level];
     const uint32_t bg = ui_theme_color_on_dark(UI_COLOR_BG);
     const uint32_t fg = s_ui_theme == UI_THEME_PLAYFUL ? 0xF1EEE6 : ui_theme_color_on_dark(UI_COLOR_TEXT);
     if (level > 3) level = 3;
@@ -102,6 +115,8 @@ uint32_t ui_theme_portrait_color(uint8_t level)
 }
 uint32_t ui_theme_portrait_subject_color(uint8_t level)
 {
+    if (level > 3) level = 3;
+    if (s_portrait_scheme) return kPortraitSchemes[s_portrait_scheme][level];
     static const uint32_t colors[UI_THEME_COUNT][4] = {
         {0x254D36, 0x4B8060, 0x80B795, 0xA8EDBB},
         {0x484D43, 0x797D69, 0xB6B7A0, 0xEEE7D6},
