@@ -12,11 +12,6 @@ python3 tools/generate_ui_sfx.py --check
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
     -Itests/game_audio_mocks -Imain tests/test_ui_sfx.c -lm -o "$test_dir/ui-sfx"
 "$test_dir/ui-sfx"
-for mode in MIC SFX; do
-    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
-        -DTEST_$mode -Itests/game_audio_mocks -Imain tests/test_game_audio_lifecycle.c -o "$test_dir/game-$mode"
-    "$test_dir/game-$mode"
-done
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain/apps/voice \
     tests/test_ui_pixel_math.c main/apps/voice/ui_pixel_math.c -o "$test_dir/math"
 "$test_dir/math"

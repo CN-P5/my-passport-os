@@ -151,8 +151,6 @@ IconPalette icon_palette_for(passport_app_id_t id) {
         case APP_ID_RADIO: return {0xFFB74D, 0x8A5A1E, 0xFFE3AE};
         case APP_ID_VOICE: return {0x4ED39A, 0x1F7A58, 0xB9F5DA};
         case APP_ID_XIAOZHI: return {0x38BDF8, 0x1D6FA8, 0xE9F6FF};
-        case APP_ID_MUSE: return {0x8DA7B0, 0x4A5F68, 0xDCE7EA};
-        case APP_ID_GAME: return {0xEEA438, 0x8F5B13, 0xFFD98A};
         case APP_ID_SOUND_JUMP: return {0xE8C547, 0x8A6E10, 0xFFF3B8};
         case APP_ID_TETRIS: return {0xE05C6E, 0x2E8BC0, 0xE9C46A};
         case APP_ID_STOPWATCH: return {0xDDB36C, 0x7C5A20, 0xF6E0B0};
@@ -213,14 +211,6 @@ void draw_app_icon(passport_app_id_t id, uint32_t theme_color) {
             set_part(5, 38, 4, 12, 6, detail);      // 天线头
             set_part(6, 26, 64, 36, 6, warm);     // 围巾
             break;
-        case APP_ID_MUSE:
-                set_frame(0, 18, 18, 52, 46, color, 4);
-                set_part(1, 29, 31, 6, 12, color);
-                set_part(2, 53, 31, 6, 12, color);
-                set_part(3, 36, 53, 16, 4, color);
-                set_part(4, 6, 34, 8, 20, color);
-                set_part(5, 74, 34, 8, 20, color);
-                break;
         case APP_ID_WIFI:
             // 信号塔:四级阶梯(与其它图标的"方块"语言一致)
             set_part(0, 14, 56, 12, 18, color);
@@ -237,18 +227,8 @@ void draw_app_icon(passport_app_id_t id, uint32_t theme_color) {
             set_part(4, 52, 35, 16, 18, detail);
             set_part(5, 22, 56, 16, 18, warm);
             break;
-        case APP_ID_GAME:
-            // 你在狗叫什么: 像素狗头(柴犬大脸 + 双折耳 + 眼鼻 + 汪汪大嘴)
-            set_frame(0, 16, 26, 52, 38, color, 4);   // 狗脸主体
-            set_part(1, 10, 18, 14, 16, color);       // 左耳
-            set_part(2, 60, 18, 14, 16, color);       // 右耳
-            set_part(3, 26, 36, 8, 8, color);         // 左眼
-            set_part(4, 50, 36, 8, 8, color);         // 右眼
-            set_part(5, 38, 44, 8, 6, color);         // 黑鼻头
-            set_part(6, 32, 54, 20, 8, color);        // 汪汪张开的大嘴
-            break;
         case APP_ID_SOUND_JUMP:
-            // Same four-legged Claude silhouette as the game, matching theme in launcher.
+            // Same four-legged Claude silhouette as before, matching theme in launcher.
             set_part(0, 14, 16, 60, 40, color);
             set_part(1, 4, 36, 80, 12, color);
             set_part(2, 14, 56, 6, 14, color);
@@ -321,7 +301,7 @@ void update_card_content() {
     uint32_t color = kPhos;
     if (ui_theme_is_multicolor()) {
         switch (app->id) {
-            case APP_ID_RADIO: case APP_ID_GAME: case APP_ID_POMODORO: color = UI_TERTIARY; break;
+            case APP_ID_RADIO: case APP_ID_POMODORO: color = UI_TERTIARY; break;
             case APP_ID_VOICE: case APP_ID_TETRIS: color = UI_SECONDARY; break;
             case APP_ID_XIAOZHI: case APP_ID_STOPWATCH: color = UI_SUCCESS; break;
             default: break;

@@ -10,8 +10,8 @@ static bool key_opens_launcher=false;
 static void key(uint8_t,app_btn_event_t,uint16_t){++keys;if(key_opens_launcher)app_registry_switch_to(APP_ID_LAUNCHER);}
 static passport_app_t app(passport_app_id_t id){passport_app_t a{};a.id=id;a.name="test";a.start=start;a.stop=stop;a.on_key=key;a.prepare_stop=prepare;return a;}
 const passport_app_t g_radio_app=app(APP_ID_RADIO),g_voice_app=app(APP_ID_VOICE),g_xiaozhi_app=app(APP_ID_XIAOZHI),
- g_wifi_app=app(APP_ID_WIFI),g_settings_app=app(APP_ID_SETTINGS),g_home_app=app(APP_ID_HOME),g_game_app=app(APP_ID_GAME),
- g_tetris_app=app(APP_ID_TETRIS),g_stopwatch_app=app(APP_ID_STOPWATCH),g_sound_jump_app=app(APP_ID_SOUND_JUMP),g_muse_app=app(APP_ID_MUSE),g_pomodoro_app=app(APP_ID_POMODORO),
+ g_wifi_app=app(APP_ID_WIFI),g_settings_app=app(APP_ID_SETTINGS),g_home_app=app(APP_ID_HOME),
+ g_tetris_app=app(APP_ID_TETRIS),g_stopwatch_app=app(APP_ID_STOPWATCH),g_sound_jump_app=app(APP_ID_SOUND_JUMP),g_pomodoro_app=app(APP_ID_POMODORO),
 g_weather_app=app(APP_ID_WEATHER);
 void launcher_ui_show(){start();} void launcher_ui_hide(){stop();}
 void launcher_ui_on_key(uint8_t,app_btn_event_t){++keys;}
@@ -44,7 +44,7 @@ int main(){
  // A busy display must not discard a request after its worker has stopped.
  mock_display_lock=false;app_registry_switch_to(APP_ID_HOME);assert(starts==2);
  mock_display_lock=true;app_registry_process_pending_switch();assert(starts==3);
- mock_chime=true;app_registry_switch_to(APP_ID_GAME);assert(starts==3);
+ mock_chime=true;app_registry_switch_to(APP_ID_SOUND_JUMP);assert(starts==3);
  mock_chime=false;app_registry_process_pending_switch();assert(starts==4);
  // Sleep/wake preserves PM lock balance and consumes the waking gesture.
  app_registry_set_screen_timeout(1);mock_now+=2000000;app_registry_tick();assert(!app_registry_screen_is_on());
@@ -85,14 +85,14 @@ int main(){
 
  // Returning to the still-visible app during cancellation must supersede the
  // pending destination and restart the stopped worker, not drop the request.
- mock_ready=false;app_registry_switch_to(APP_ID_HOME);app_registry_switch_to(APP_ID_GAME);
- assert(s_pending_target==APP_ID_GAME);mock_ready=true;const int before_restart=starts;
- app_registry_process_pending_switch();assert(starts==before_restart+1&&app_registry_get_active()==APP_ID_GAME);
+ mock_ready=false;app_registry_switch_to(APP_ID_HOME);app_registry_switch_to(APP_ID_SOUND_JUMP);
+ assert(s_pending_target==APP_ID_SOUND_JUMP);mock_ready=true;const int before_restart=starts;
+ app_registry_process_pending_switch();assert(starts==before_restart+1&&app_registry_get_active()==APP_ID_SOUND_JUMP);
  // A reminder wakes the display without changing foreground or its worker.
  app_registry_set_screen_timeout(1);mock_now+=2000000;app_registry_tick();assert(!app_registry_screen_is_on());
  const int notice_starts=starts,notice_stops=stops;
  assert(app_registry_wake_for_notice());assert(app_registry_screen_is_on());
- assert(starts==notice_starts&&stops==notice_stops&&app_registry_get_active()==APP_ID_GAME);
+ assert(starts==notice_starts&&stops==notice_stops&&app_registry_get_active()==APP_ID_SOUND_JUMP);
  assert(*s_display_awake_lock==1);assert(app_registry_wake_for_notice());assert(*s_display_awake_lock==1);
  app_registry_switch_to(APP_ID_HOME);
  app_registry_dispatch_key(BSP_BTN_UP,BTN_EVT_PRESS,0);
@@ -132,13 +132,13 @@ int main(){
  // Clean launch: heavy apps start in place while the heap fits them, however
  // often they are re-entered; light apps never restart.
  app_registry_switch_to(APP_ID_HOME);assert(mock_restarts==0);
- app_registry_switch_to(APP_ID_MUSE);assert(app_registry_get_active()==APP_ID_MUSE&&mock_restarts==0);
+ app_registry_switch_to(APP_ID_XIAOZHI);assert(app_registry_get_active()==APP_ID_XIAOZHI&&mock_restarts==0);
  app_registry_switch_to(APP_ID_HOME);app_registry_switch_to(APP_ID_XIAOZHI);
  app_registry_switch_to(APP_ID_HOME);app_registry_switch_to(APP_ID_RADIO);
  assert(app_registry_get_active()==APP_ID_RADIO&&mock_restarts==0);
  // An allocation failure during a heavy session marks the heap as strained:
  // leaving is fine, the next heavy entry restarts into itself once.
- ++mock_alloc_failures;app_registry_switch_to(APP_ID_HOME);app_registry_switch_to(APP_ID_GAME);
+ ++mock_alloc_failures;app_registry_switch_to(APP_ID_HOME);app_registry_switch_to(APP_ID_SOUND_JUMP);
  assert(mock_restarts==0);
  const int clean_stops=stops;
  try{app_registry_switch_to(APP_ID_XIAOZHI);assert(false);}catch(const MockRestart&){}
@@ -150,7 +150,7 @@ int main(){
  assert(app_registry_take_clean_launch()==APP_ID_COUNT);
  s_clean_launch[0]=kCleanLaunchMagic;s_clean_launch[1]=APP_ID_RADIO^kCleanLaunchMagic;
  mock_reset_reason=ESP_RST_PANIC;assert(app_registry_take_clean_launch()==APP_ID_COUNT);
- s_clean_launch[0]=kCleanLaunchMagic;s_clean_launch[1]=APP_ID_GAME^kCleanLaunchMagic;
+ s_clean_launch[0]=kCleanLaunchMagic;s_clean_launch[1]=APP_ID_SOUND_JUMP^kCleanLaunchMagic;
  mock_reset_reason=ESP_RST_SW;assert(app_registry_take_clean_launch()==APP_ID_COUNT);
  s_clean_launch[0]=0x12345678;s_clean_launch[1]=APP_ID_RADIO;assert(app_registry_take_clean_launch()==APP_ID_COUNT);
  // Real RAM is fresh after the restart; the mock keeps state, so model that.
@@ -164,12 +164,12 @@ int main(){
  assert(mock_restarts==2);
  // Total free is checked as well as the largest block.
  mock_largest=40000;mock_free=40*1024;
- try{app_registry_switch_to(APP_ID_MUSE);assert(false);}catch(const MockRestart&){}
+ try{app_registry_switch_to(APP_ID_XIAOZHI);assert(false);}catch(const MockRestart&){}
  assert(mock_restarts==3);
  // The boot after a clean launch never restarts again, even if the heap is short.
- s_clean_launch[0]=kCleanLaunchMagic;s_clean_launch[1]=APP_ID_MUSE^kCleanLaunchMagic;
- assert(app_registry_take_clean_launch()==APP_ID_MUSE);
- app_registry_switch_to(APP_ID_MUSE);assert(app_registry_get_active()==APP_ID_MUSE&&mock_restarts==3);
+ s_clean_launch[0]=kCleanLaunchMagic;s_clean_launch[1]=APP_ID_XIAOZHI^kCleanLaunchMagic;
+ assert(app_registry_take_clean_launch()==APP_ID_XIAOZHI);
+ app_registry_switch_to(APP_ID_XIAOZHI);assert(app_registry_get_active()==APP_ID_XIAOZHI&&mock_restarts==3);
  mock_largest=40000;mock_free=100000;
  mock_active=nullptr;for(auto *p:mock_screens)delete p;mock_screens.clear();
  delete s_switch_mutex;delete s_display_awake_lock;

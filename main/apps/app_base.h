@@ -17,11 +17,11 @@ typedef enum {
     APP_ID_WIFI,
     APP_ID_SETTINGS,
     APP_ID_HOME,
-    APP_ID_GAME,
+    APP_ID_GAME,      /* 已移除「你在狗叫什么」；ID 保留，避免 RTC/定时器恢复里存的旧值错位 */
     APP_ID_TETRIS,
     APP_ID_STOPWATCH,
     APP_ID_SOUND_JUMP,
-    APP_ID_MUSE,
+    APP_ID_MUSE,      /* 已移除「随身 Muse」；同上保留 ID */
     APP_ID_POMODORO,
     APP_ID_WEATHER,
     APP_ID_COUNT

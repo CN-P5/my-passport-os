@@ -2,10 +2,10 @@ import os
 import re
 
 app_files = [
+    'main/apps/weather/app_weather.cc',
     'main/apps/radio/app_radio.cc',
     'main/apps/voice/app_voice.cc',
     'main/apps/xiaozhi/app_xiaozhi.cc',
-    'main/apps/game/app_game.cc',
     'main/apps/game/app_tetris.cc',
     'main/launcher/wifi_setup.cc',
     'main/launcher/settings.cc',
