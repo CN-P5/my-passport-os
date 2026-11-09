@@ -7,8 +7,11 @@ Windows 侧没有 ESP-IDF 工具链，WSL 里编译虽然可行，但把构建�
 ## 日常用法
 
 ```bash
-# 只看编译与校验结果
+# 增量编译（保留远端的 managed_components 与 build/）
 POS_HOST=192.168.10.204 POS_PW=<密码> bash tools/build-remote.sh
+
+# 全量重编
+POS_HOST=192.168.10.204 POS_PW=<密码> bash tools/build-remote.sh --clean
 
 # 顺便把 app 镜像与整包镜像取回到本地目录
 POS_HOST=192.168.10.204 POS_PW=<密码> bash tools/build-remote.sh --fetch ../_work/build
