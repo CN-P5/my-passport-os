@@ -60,6 +60,7 @@ python3 tests/test_wifi_internet.py
 "$test_dir/captive-setup"
 node tests/test_profile_page.js
 node tests/test_portrait_pixels.js
+node tests/test_portrait_presets.js
 python3 tests/test_card_gallery.py
 python3 tests/test_avatar_upload.py
 "${CC:-cc}" -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -Wno-unused-variable \
