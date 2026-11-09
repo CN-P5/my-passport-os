@@ -189,7 +189,7 @@ static esp_err_t handler_profile_post(httpd_req_t *req) {
         const int value = item->valueint;
         *dst = (uint8_t)(value < 0 || value > max_value ? 0 : value);
     };
-    grab_choice("scene", 5, &in.scene);
+    grab_choice("scene", 2, &in.scene);
     grab_choice("portrait_scheme", 3, &in.portrait_scheme);
     cJSON_Delete(root);
     if (!valid) return send_json(req, 400, "{\"error\":\"text too long\"}");

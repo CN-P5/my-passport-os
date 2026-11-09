@@ -31,6 +31,7 @@
 #include "apps/home/app_home.h"
 
 #include "apps/home/home_clock.h"
+#include "apps/home/band_art.h"
 #include "apps/home/home_profile.h"
 #include "apps/home/home_upload.h"
 #include "apps/home/home_weather.h"
@@ -78,6 +79,8 @@ LV_FONT_DECLARE(lv_font_unscii_8);
 #define kPhosBorder (ui_theme_color(UI_COLOR_BORDER))
 #define kClock (ui_theme_get() == UI_THEME_NEON ? UI_ACCENT : UI_ACCENT)
 #define kBand (ui_theme_get() == UI_THEME_NEON ? UI_SECONDARY : ui_theme_get() == UI_THEME_PLAYFUL ? ui_theme_color(UI_COLOR_SUCCESS) : UI_AMBER)
+// 底图蒙版用这个颜色画：暗色用主题笔触色，亮色用墨色，保证浅纸上看得见。
+#define kBandArtInk (ui_appearance_is_dark() ? kBand : ui_theme_color(UI_COLOR_TEXT))
 #define kTemperature (ui_theme_is_multicolor() ? ui_theme_color(UI_COLOR_TERTIARY) : UI_AMBER)
 #define kWeatherAccent (ui_theme_color(ui_theme_get() == UI_THEME_NEON ? UI_COLOR_SUCCESS : UI_COLOR_ACCENT))
 
@@ -189,10 +192,11 @@ lv_obj_t *s_lbl_feels = nullptr;     // 体感 (网格第 2 行左)
 lv_obj_t *s_lbl_stat = nullptr;      // 状态 (网格第 2 行右)
 lv_obj_t *s_lbl_footer = nullptr;
 
-// 底部彩色场景：0=海边 1=城镇 2=山峰 3=天空 4=沙漠，按需现画不上图床。
-// scene 配置为"自动"时按日期轮换；长按上键可手动切。
-int s_scene = 0;
-bool s_scene_auto = true;
+// 底部艺术底图：内置两张 240×80 A8 蒙版（城市夜景/山湖月色），底色透出首页背景，
+// 蒙版笔触色按亮暗模式取；scene 配置 1/2 可固定其中一张，0=跟随长按上键切换。
+uint8_t s_band_index = 0;
+lv_image_dsc_t s_band_dsc[2];
+lv_obj_t *s_band_img = nullptr;
 
 // ---- 天气像素图标(画在 s_wicon_zone 内,全部是色块) ----
 constexpr int kWiMax = 12;
@@ -667,9 +671,12 @@ void apply_profile(const home_profile_t *prof) {
         expand_portrait();
         if (s_avatar_img) lv_obj_invalidate(s_avatar_img);
     }
-    s_scene_auto = prof->scene == 0;
-    if (prof->scene) s_scene = prof->scene - 1;
-    if (s_screen) lv_obj_invalidate(s_screen);
+    if (prof->scene == 1 || prof->scene == 2) s_band_index = (uint8_t)(prof->scene - 1);
+    if (s_band_img) {
+        lv_image_set_src(s_band_img, &s_band_dsc[s_band_index]);
+        lv_obj_set_style_image_recolor(s_band_img, lv_color_hex(kBandArtInk), 0);
+        lv_obj_invalidate(s_band_img);
+    }
     refresh_weather_ui();
 }
 
@@ -680,88 +687,6 @@ lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, uint32_t color,
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
     lv_obj_set_style_text_align(label, align, 0);
     return label;
-}
-
-// ---- 底部彩色场景 (x0..240, y240..292) ----
-constexpr int kSceneTop = 240;
-constexpr int kSceneH = 52;
-
-void scene_px(pixel_scene::Ink &ink, int x, int y, int w, int h, uint32_t color) {
-    ink.box(x, y, w, h, color);
-}
-
-void scene_seaside(pixel_scene::Ink &ink) {
-    scene_px(ink, 176, kSceneTop + 12, 16, 16, 0xF7C948);
-    scene_px(ink, 180, kSceneTop + 8, 8, 8, 0xF7C948);
-    scene_px(ink, 0, kSceneTop + 36, 240, 10, 0x2E6E8E);
-    scene_px(ink, 0, kSceneTop + 46, 240, 6, 0x1F4F63);
-    for (int i = 0; i < 8; ++i) scene_px(ink, i * 32 + 6, kSceneTop + 38, 12, 2, 0xEAF2FA);
-    scene_px(ink, 0, kSceneTop + 50, 240, 2, 0xD8B36A);
-}
-
-void scene_town(pixel_scene::Ink &ink) {
-    scene_px(ink, 196, kSceneTop + 6, 10, 10, 0xF2E8B0);
-    static const int hs[] = {14, 22, 10, 26, 18, 12, 20, 16};
-    for (int i = 0; i < 8; ++i) {
-        const int w = 24 + (i % 2) * 6;
-        const int h = hs[i];
-        const int x = i * 30;
-        scene_px(ink, x, kSceneTop + 36 - h, w, h + 8, i % 2 ? 0x33456B : 0x263758);
-        for (int wy = 0; wy < h - 6; wy += 6)
-            for (int wx = 0; wx < w - 8; wx += 8)
-                if (((wx + wy + i) % 16) == 0) scene_px(ink, x + 4 + wx, kSceneTop + 40 - h + wy, 3, 3, 0xF2B93B);
-    }
-    scene_px(ink, 0, kSceneTop + 44, 240, 4, ui_theme_color(UI_COLOR_BORDER));
-}
-
-void scene_mountain(pixel_scene::Ink &ink) {
-    for (int step = 0; step < 18; ++step) {
-        const int y = kSceneTop + 46 - step;
-        scene_px(ink, 30 + step * 2, y, 2, 1, 0x3A4A5A);
-        scene_px(ink, 66 - step * 2, y, 2, 1, 0x3A4A5A);
-        scene_px(ink, 150 + step, y, 2, 1, 0x596B7B);
-    }
-    scene_px(ink, 30, kSceneTop + 4, 2, 26, 0x3A4A5A);
-    scene_px(ink, 24, kSceneTop + 2, 14, 4, 0xEAF2FA);
-    scene_px(ink, 0, kSceneTop + 46, 240, 6, 0x2E6E8E);
-}
-
-void scene_sky_scene(pixel_scene::Ink &ink) {
-    scene_px(ink, 24, kSceneTop + 12, 34, 6, WICON_WHITE);
-    scene_px(ink, 32, kSceneTop + 8, 18, 6, WICON_WHITE);
-    scene_px(ink, 150, kSceneTop + 30, 40, 6, WICON_WHITE);
-    scene_px(ink, 160, kSceneTop + 26, 20, 6, WICON_WHITE);
-    scene_px(ink, 104, kSceneTop + 10, 20, 16, 0xE05C6E);
-    scene_px(ink, 108, kSceneTop + 26, 12, 8, 0xE05C6E);
-    scene_px(ink, 112, kSceneTop + 34, 4, 4, 0xF2C14E);
-}
-
-void scene_desert(pixel_scene::Ink &ink) {
-    scene_px(ink, 40, kSceneTop + 10, 14, 14, 0xF7C948);
-    scene_px(ink, 0, kSceneTop + 38, 240, 14, 0xD89A5C);
-    scene_px(ink, 60, kSceneTop + 34, 120, 8, 0xC07A3E);
-    scene_px(ink, 186, kSceneTop + 20, 4, 20, 0x3E7C4F);
-    scene_px(ink, 182, kSceneTop + 26, 4, 4, 0x3E7C4F);
-    scene_px(ink, 190, kSceneTop + 30, 4, 4, 0x3E7C4F);
-}
-
-// 自动模式按"今天是一年中的第几天"轮换，保证同一天多次进入首页画面固定。
-int scene_index(void) {
-    if (!s_scene_auto) return s_scene % 5;
-    const time_t now = time(nullptr);
-    struct tm local {};
-    if (now > 1700000000 && localtime_r(&now, &local) != nullptr) return local.tm_yday % 5;
-    return 0;
-}
-
-void draw_scene(pixel_scene::Ink &ink) {
-    switch (scene_index()) {
-        case 0: scene_seaside(ink); break;
-        case 1: scene_town(ink); break;
-        case 2: scene_mountain(ink); break;
-        case 3: scene_sky_scene(ink); break;
-        default: scene_desert(ink); break;
-    }
 }
 
 // Passport paper details are drawn on demand without retained child objects.
@@ -782,7 +707,6 @@ void draw_passport_details(lv_event_t *event) {
     for (int i = 0; i < 18; ++i)
         ink.box(14 + i * 5, 226, i % 3 ? 1 : 2, i % 4 ? 5 : 8, ui_theme_color(kBarTones[i % 4]));
     ink.box(120, 162, 110, 1, kPhosBorder);
-    draw_scene(ink);
 }
 
 void create_ui() {
@@ -908,6 +832,12 @@ void create_ui() {
     lv_label_set_text(s_lbl_stat, "PM2.5 --");
     ui_pixel_label_set_text(s_lbl_wind, "风向 --");
 
+
+    // ---- 底部艺术底图 (y240..320):A8 蒙版 + 亮暗自适应笔触色,全宽出血 ----
+    s_band_img = lv_image_create(s_screen);
+    lv_image_set_src(s_band_img, &s_band_dsc[s_band_index]);
+    lv_obj_set_pos(s_band_img, 0, 240);
+    lv_obj_set_style_image_recolor(s_band_img, lv_color_hex(kBandArtInk), 0);
 
     // ---- 按键提示:底黑条 + 1px 细分隔线 + 提拉 6px 安全边距 ----
     px_block(s_screen, 0, 292, 240, 1, kPhosBorder);
@@ -1100,10 +1030,9 @@ void toggle_share_view() {
 }
 
 // 长按上键:循环切换底部艺术底图(城市夜景 → 山湖月色;将来加入用户上传槽)。
-void scene_next(void) {
-    s_scene_auto = false;
-    s_scene = (s_scene + 1) % 5;
-    if (s_screen) lv_obj_invalidate(s_screen);
+void band_art_next(void) {
+    s_band_index = (s_band_index + 1) % 2;
+    if (s_band_img) lv_image_set_src(s_band_img, &s_band_dsc[s_band_index]);
 }
 
 void home_task(void *arg) {
@@ -1243,6 +1172,19 @@ void home_init() {
     s_portrait_dsc.data_size = HOME_PORTRAIT_I4_BYTES;
     s_portrait_dsc.data = s_portrait_pixels;
 
+    // 内置底图(A8,数据在 flash,零 RAM 占用)
+    const uint8_t *band_data[2] = {kBandArtCity, kBandArtMountain};
+    for (int i = 0; i < 2; ++i) {
+        s_band_dsc[i].header.magic = LV_IMAGE_HEADER_MAGIC;
+        s_band_dsc[i].header.cf = LV_COLOR_FORMAT_A8;
+        s_band_dsc[i].header.flags = 0;
+        s_band_dsc[i].header.w = BAND_ART_W;
+        s_band_dsc[i].header.h = BAND_ART_H;
+        s_band_dsc[i].header.stride = BAND_ART_W;
+        s_band_dsc[i].data_size = BAND_ART_W * BAND_ART_H;
+        s_band_dsc[i].data = band_data[i];
+    }
+
     ESP_LOGI(kTag, "Home app subsystems ready");
 }
 
@@ -1321,6 +1263,7 @@ void home_stop() {
     s_portrait_ph = nullptr;
     s_lbl_date = nullptr;
     s_lbl_week = nullptr;
+    s_band_img = nullptr;
     for (lv_obj_t *&bar : s_wifi_bars) bar = nullptr;
     s_batt = {nullptr, nullptr};
     for (lv_obj_t *&slot : s_clk_slots) slot = nullptr;
@@ -1377,7 +1320,7 @@ void home_on_key(uint8_t btn, app_btn_event_t event, uint16_t mv) {
     if (btn == BSP_BTN_UP && event == BTN_EVT_LONG) {
         if (s_share_visible) return;
         bsp_lvgl_lock(-1);
-        scene_next();
+        band_art_next();
         bsp_lvgl_unlock();
         return;
     }

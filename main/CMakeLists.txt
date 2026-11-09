@@ -57,6 +57,7 @@ idf_component_register(
         "apps/home/home_weather.c"
         "apps/home/home_upload.cc"
         "apps/home/app_home.cc"
+    "apps/home/band_art.c"
         "apps/sound_jump/jump_core.c"
         "apps/sound_jump/jump_voice.c"
         "apps/sound_jump/jump_mic.c"
