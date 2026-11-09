@@ -79,8 +79,6 @@ LV_FONT_DECLARE(lv_font_unscii_8);
 #define kPhosBorder (ui_theme_color(UI_COLOR_BORDER))
 #define kClock (ui_theme_get() == UI_THEME_NEON ? UI_ACCENT : UI_ACCENT)
 #define kBand (ui_theme_get() == UI_THEME_NEON ? UI_SECONDARY : ui_theme_get() == UI_THEME_PLAYFUL ? ui_theme_color(UI_COLOR_SUCCESS) : UI_AMBER)
-// 底图蒙版用这个颜色画：暗色用主题笔触色，亮色用墨色，保证浅纸上看得见。
-#define kBandArtInk (ui_appearance_is_dark() ? kBand : ui_theme_color(UI_COLOR_TEXT))
 #define kTemperature (ui_theme_is_multicolor() ? ui_theme_color(UI_COLOR_TERTIARY) : UI_AMBER)
 #define kWeatherAccent (ui_theme_color(ui_theme_get() == UI_THEME_NEON ? UI_COLOR_SUCCESS : UI_COLOR_ACCENT))
 
@@ -192,11 +190,13 @@ lv_obj_t *s_lbl_feels = nullptr;     // 体感 (网格第 2 行左)
 lv_obj_t *s_lbl_stat = nullptr;      // 状态 (网格第 2 行右)
 lv_obj_t *s_lbl_footer = nullptr;
 
-// 底部艺术底图：内置两张 240×80 A8 蒙版（城市夜景/山湖月色），底色透出首页背景，
-// 蒙版笔触色按亮暗模式取；scene 配置 1/2 可固定其中一张，0=跟随长按上键切换。
+// 底部艺术底图：内置两张 240×52 I4 16 色调色板图（城市夜景/山湖月色）。
+// 由于是真彩，亮暗都能直接显示；暗色下再叠一层半透明压暗，避免刺眼。
+// scene 配置 1/2 可固定其中一张，0=跟随长按上键切换。
 uint8_t s_band_index = 0;
 lv_image_dsc_t s_band_dsc[2];
 lv_obj_t *s_band_img = nullptr;
+lv_obj_t *s_band_scrim = nullptr;
 
 // ---- 天气像素图标(画在 s_wicon_zone 内,全部是色块) ----
 constexpr int kWiMax = 12;
@@ -674,9 +674,10 @@ void apply_profile(const home_profile_t *prof) {
     if (prof->scene == 1 || prof->scene == 2) s_band_index = (uint8_t)(prof->scene - 1);
     if (s_band_img) {
         lv_image_set_src(s_band_img, &s_band_dsc[s_band_index]);
-        lv_obj_set_style_image_recolor(s_band_img, lv_color_hex(kBandArtInk), 0);
         lv_obj_invalidate(s_band_img);
     }
+    if (s_band_scrim)
+        lv_obj_set_style_bg_opa(s_band_scrim, ui_appearance_is_dark() ? LV_OPA_30 : LV_OPA_TRANSP, 0);
     refresh_weather_ui();
 }
 
@@ -833,11 +834,12 @@ void create_ui() {
     ui_pixel_label_set_text(s_lbl_wind, "风向 --");
 
 
-    // ---- 底部艺术底图 (y240..320):A8 蒙版 + 亮暗自适应笔触色,全宽出血 ----
+    // ---- 底部真彩底图 (y240..292) + 暗色压暗 ----
     s_band_img = lv_image_create(s_screen);
     lv_image_set_src(s_band_img, &s_band_dsc[s_band_index]);
     lv_obj_set_pos(s_band_img, 0, 240);
-    lv_obj_set_style_image_recolor(s_band_img, lv_color_hex(kBandArtInk), 0);
+    s_band_scrim = px_block(s_screen, 0, 240, 240, BAND_ART_H, 0x000000);
+    lv_obj_set_style_bg_opa(s_band_scrim, ui_appearance_is_dark() ? LV_OPA_30 : LV_OPA_TRANSP, 0);
 
     // ---- 按键提示:底黑条 + 1px 细分隔线 + 提拉 6px 安全边距 ----
     px_block(s_screen, 0, 292, 240, 1, kPhosBorder);
@@ -1172,16 +1174,16 @@ void home_init() {
     s_portrait_dsc.data_size = HOME_PORTRAIT_I4_BYTES;
     s_portrait_dsc.data = s_portrait_pixels;
 
-    // 内置底图(A8,数据在 flash,零 RAM 占用)
+    // 内置 16 色底图（I4:64 字节调色板 + 4bpp,在 flash,零 RAM 占用）
     const uint8_t *band_data[2] = {kBandArtCity, kBandArtMountain};
     for (int i = 0; i < 2; ++i) {
         s_band_dsc[i].header.magic = LV_IMAGE_HEADER_MAGIC;
-        s_band_dsc[i].header.cf = LV_COLOR_FORMAT_A8;
+        s_band_dsc[i].header.cf = LV_COLOR_FORMAT_I4;
         s_band_dsc[i].header.flags = 0;
         s_band_dsc[i].header.w = BAND_ART_W;
         s_band_dsc[i].header.h = BAND_ART_H;
-        s_band_dsc[i].header.stride = BAND_ART_W;
-        s_band_dsc[i].data_size = BAND_ART_W * BAND_ART_H;
+        s_band_dsc[i].header.stride = BAND_ART_W / 2;
+        s_band_dsc[i].data_size = BAND_ART_BYTES;
         s_band_dsc[i].data = band_data[i];
     }
 
@@ -1264,6 +1266,7 @@ void home_stop() {
     s_lbl_date = nullptr;
     s_lbl_week = nullptr;
     s_band_img = nullptr;
+    s_band_scrim = nullptr;
     for (lv_obj_t *&bar : s_wifi_bars) bar = nullptr;
     s_batt = {nullptr, nullptr};
     for (lv_obj_t *&slot : s_clk_slots) slot = nullptr;

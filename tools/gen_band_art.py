@@ -1,273 +1,149 @@
-# tools/gen_band_art.py —— 生成首页绿磷光 A8 底图(240×80, 0/255 两级)。
+# tools/gen_band_art.py —— 生成首页底部 240×52 真彩底图（RGB565 C 数组）。
 #
-# 高对比海报风:剪影纯黑、灯光/月亮纯亮,只有天空/光晕用 Bayer 有序网点 ——
-# 保证小图上一眼能认出"画的什么"。
-# 设备端 lv_image + image_recolor(绿) 显示;内置图在 flash(.rodata)零 RAM 占用。
+# 两张场景按"城市夜景 / 山湖月色"的构图自己画（不搬第三方像素资源）：
+#   tools/band_art/city.png / lake.png   —— 便于预览与后续微调
+#   main/apps/home/band_art.c            —— 固件用的 RGB565 数组
 #
-# 用法: python tools/gen_band_art.py   (在仓库根目录执行)
-# 输出: main/apps/home/band_art.c / band_art.h
+# 用法：python tools/gen_band_art.py
+# 说明：LVGL 的 RGB565 按小端存储，这里直接按 <H 打包，屏幕上颜色才不会互换。
+import os
+import struct
+import sys
 
-import math
-import random
-from PIL import Image, ImageDraw
+try:
+    from PIL import Image, ImageDraw
+except ImportError:  # pragma: no cover
+    sys.exit('需要 Pillow：pip install pillow')
 
-W, H = 240, 80
-OUT_C = "main/apps/home/band_art.c"
-OUT_H = "main/apps/home/band_art.h"
-
-# 4×4 Bayer 矩阵(0..15):灰度 > 阈值 → 亮点。规则网点比 Floyd 噪声更像磷光屏。
-BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
-
-
-def bayer_dither(img):
-    px = img.load()
-    out = Image.new("L", (W, H), 0)
-    po = out.load()
-    for y in range(H):
-        for x in range(W):
-            t = (BAYER[y % 4][x % 4] + 0.5) * 16
-            po[x, y] = 255 if px[x, y] > t else 0
-    return out
+W, H = 240, 52
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT_PNG = os.path.join(ROOT, 'tools', 'band_art')
+OUT_C = os.path.join(ROOT, 'main', 'apps', 'home', 'band_art.c')
 
 
-def vgrad(draw, top, bottom):
-    for y in range(H):
-        v = top + (bottom - top) * y // H
-        draw.line([(0, y), (W - 1, y)], fill=v)
+def lerp(a, b, t):
+    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
-def glow(draw, cx, cy, peak, spread):
-    """月亮径向光晕:中心 peak,线性衰减到 0。"""
-    for y in range(max(0, cy - spread), min(H, cy + spread)):
-        for x in range(max(0, cx - spread), min(W, cx + spread)):
-            d = math.hypot(x - cx, y - cy)
-            if d > spread:
-                continue
-            v = int(peak * max(0.0, 1.0 - d / spread))
-            if v:
-                draw.point((x, y), fill=max(v, 0))
+def sky(img, top, bottom, y0=0, y1=H):
+    draw = ImageDraw.Draw(img)
+    for y in range(y0, y0 + y1):
+        draw.line([(0, y), (W - 1, y)], fill=lerp(top, bottom, (y - y0) / max(1, y1 - 1)))
 
 
-def stars(draw, n, ymax, seed):
-    rnd = random.Random(seed)
-    for _ in range(n):
-        x, y = rnd.randrange(W), rnd.randrange(ymax)
-        draw.point((x, y), fill=255)
-        if rnd.random() < 0.3:   # 十字星
-            draw.point((x - 1, y), fill=120)
-            draw.point((x + 1, y), fill=120)
-
-
-def draw_city():
-    """场景1: 江城夜景 —— 月 + 星 + 电视塔 + 跨江大桥 + 楼群 + 水面倒影。"""
-    horizon = 54
-    img = Image.new("L", (W, H), 0)
+def city():
+    img = Image.new('RGB', (W, H))
     d = ImageDraw.Draw(img)
-
-    vgrad(d, 18, 52)
-    stars(d, 20, 44, seed=20260913)
-    glow(d, 196, 15, 150, 16)
-    d.ellipse([196 - 8, 15 - 8, 196 + 8, 15 + 8], fill=255)
-    d.ellipse([196 - 2, 15 - 5, 196 + 4, 15 + 2], fill=170)   # 月面暗斑
-
-    # ---- 地标电视塔(锥形塔身 + 观景舱 + 天线) ----
-    for i, y in enumerate(range(16, horizon)):
-        t = (y - 16) / (horizon - 16)
-        half = 2 + int(6 * t)                     # 2 → 8
-        d.line([(38 - half, y), (38 + half, y)], fill=6)
-        if i % 6 == 3:                            # 塔身灯光环
-            d.line([(38 - half - 1, y), (38 - half, y)], fill=255)
-            d.line([(38 + half, y), (38 + half + 1, y)], fill=255)
-    d.rectangle([32, 32, 45, 39], fill=6)          # 观景舱
-    d.rectangle([32, 32, 45, 34], fill=255)        # 舱体灯带
-    d.line([(38, 16), (38, 7)], fill=6)            # 天线
-    d.point((38, 6), fill=255)                     # 天线顶灯
-
-    # ---- 跨江大桥(桥面 + 双塔 + 拉索 + 桥灯) ----
-    deck_y = horizon - 9
-    d.line([(148, deck_y), (238, deck_y)], fill=2, width=2)
-    for tx in (168, 218):                          # 桥塔
-        d.line([(tx, deck_y - 16), (tx, deck_y + 3)], fill=2, width=2)
-        d.point((tx, deck_y - 17), fill=255)       # 塔顶灯
-    for i in range(9):                             # 拉索
-        x = 152 + i * 10
-        top = 168 if x < 193 else 218
-        d.line([(x, deck_y), (top, deck_y - 14)], fill=30)
-    for lx in range(150, 238, 6):                  # 桥面路灯
-        d.point((lx, deck_y - 2), fill=255)
-
-    # ---- 远景楼群(中灰 → 稀疏网点,似雾中剪影) ----
-    rnd = random.Random(7)
-    x = 56
-    while x < 148:
-        bw = rnd.randrange(12, 22)
-        bh = rnd.randrange(8, 18)
-        d.rectangle([x, horizon - bh, x + bw, horizon], fill=55)
-        x += bw + rnd.randrange(2, 5)
-
-    # ---- 近景楼群(纯黑剪影 + 亮窗;右侧留白给大桥) ----
-    x = 50
-    while x < 148:
-        bw = rnd.randrange(16, 30)
-        bh = rnd.randrange(14, 36)
-        top = horizon - bh
-        d.rectangle([x, top, x + bw, horizon], fill=2)
-        for wy in range(top + 3, horizon - 3, 5):
-            for wx in range(x + 2, x + bw - 2, 4):
-                if rnd.random() < 0.16:
-                    d.rectangle([wx, wy, wx + 1, wy + 1], fill=255)
-        if rnd.random() < 0.35:                    # 天线
-            ax = x + bw // 2
-            d.line([(ax, top), (ax, top - 5)], fill=2)
-            d.point((ax, top - 6), fill=255)
-        x += bw + rnd.randrange(2, 6)
-
-    # ---- 水面: 暗底 + 明确的光源倒影 ----
-    d.rectangle([0, horizon, W - 1, H - 1], fill=5)
-    for y in range(horizon + 2, H, 3):             # 月倒影柱
-        ln = max(2, 10 - (y - horizon) // 4)
-        j = rnd.randrange(-2, 3)
-        d.line([(196 - ln // 2 + j, y), (196 + ln // 2 + j, y)], fill=255)
-    for lx in range(150, 238, 6):                  # 桥灯倒影(短竖闪)
-        if rnd.random() < 0.7:
-            y0 = deck_y + 4 + rnd.randrange(0, 4)
-            if y0 < H - 2:
-                d.line([(lx, y0), (lx, y0 + 2)], fill=170)
-    for _ in range(10):                            # 零星涟漪
-        y = rnd.randrange(horizon + 3, H)
-        ln = rnd.randrange(5, 14)
-        x0 = rnd.randrange(0, W - ln)
-        d.line([(x0, y), (x0 + ln, y)], fill=70)
+    horizon = 34
+    sky(img, (26, 42, 74), (200, 120, 84), 0, horizon)
+    # 落日与光晕
+    for r, color in ((13, (120, 70, 70)), (9, (232, 138, 90)), (6, (247, 201, 72))):
+        d.ellipse([196 - r, 12 - r, 196 + r, 12 + r], fill=color)
+    # 远山剪影
+    d.polygon([(0, 30), (34, 22), (62, 28), (96, 20), (140, 27), (180, 21), (214, 26), (240, 22), (240, 34), (0, 34)],
+              fill=(46, 58, 82))
+    # 楼群（高低错落）+ 亮窗
+    blocks = [(2, 16, 20, 26), (24, 24, 18, 20), (44, 12, 22, 30), (68, 20, 16, 24),
+              (86, 8, 24, 34), (112, 18, 18, 26), (132, 14, 22, 30), (156, 22, 16, 22)]
+    for i, (x, top, w, h) in enumerate(blocks):
+        d.rectangle([x, top, x + w - 1, horizon + h - 26], fill=(12, 20, 34))
+        for wy in range(top + 3, horizon + h - 30, 5):
+            for wx in range(x + 3, x + w - 4, 5):
+                if (wx * 7 + wy * 5 + i * 3) % 11 < 4:
+                    d.rectangle([wx, wy, wx + 1, wy + 2], fill=(242, 185, 59))
+    # 桥与斜拉索
+    d.line([(150, 26), (240, 26)], fill=(120, 134, 158), width=1)
+    for cx in (168, 196, 224):
+        d.line([(cx, 26), (cx + 10, 8)], fill=(96, 110, 134), width=1)
+        for k in range(1, 5):
+            x = cx + (k * 10) // 5
+            y = 26 - (k * 18) // 5
+            d.line([(x, y), (x, 26)], fill=(74, 88, 112), width=1)
+    # 海面 + 反光
+    d.rectangle([0, horizon, W - 1, H - 1], fill=(34, 78, 104))
+    for i in range(0, W, 14):
+        d.rectangle([i + 3, horizon + 2, i + 9, horizon + 3], fill=(120, 170, 192))
+        d.rectangle([i + 7, horizon + 7, i + 12, horizon + 8], fill=(58, 104, 130))
+    for i in range(0, W, 9):
+        d.rectangle([i + 2, horizon + 12, i + 5, horizon + 13], fill=(94, 140, 166))
+    d.rectangle([0, H - 3, W - 1, H - 1], fill=(26, 58, 80))
     return img
 
 
-def draw_mountain():
-    """场景2: 山湖月色 —— 大月 + 三层山脊 + 湖面倒影 + 松林 + 小船渔火。"""
-    horizon = 48
-    img = Image.new("L", (W, H), 0)
+def lake():
+    img = Image.new('RGB', (W, H))
     d = ImageDraw.Draw(img)
-
-    vgrad(d, 14, 46)
-    stars(d, 24, 38, seed=31415)
-    glow(d, 64, 17, 160, 18)
-    d.ellipse([64 - 9, 17 - 9, 64 + 9, 17 + 9], fill=255)
-    d.ellipse([64 - 2, 17 - 6, 64 + 5, 17 + 3], fill=170)
-
-    # 三层山脊: 远(网点) → 中 → 近(纯黑),正弦叠加轮廓
-    def ridge(base, amp, freq, phase, fill):
-        pts = [(0, H)]
-        for x in range(0, W + 1, 3):
-            y = base - int(amp * (math.sin(x / freq + phase) * 0.6 +
-                                  math.sin(x / (freq * 0.37) + phase * 2.7) * 0.4))
-            pts.append((x, y))
-        pts.append((W, H))
-        d.polygon(pts, fill=fill)
-
-    ridge(horizon - 7, 11, 30.0, 0.7, 44)
-    ridge(horizon - 3, 8, 22.0, 2.3, 20)
-    ridge(horizon + 2, 6, 16.0, 4.4, 2)
-
-    # 近岸松林(左右两团,纯黑三角叠塔)
-    def pine(cx, base, h, w):
-        for i in range(3):
-            top = base - h + i * (h // 3)
-            half = int(w * (i + 1) / 3 / 2) + 1
-            d.polygon([(cx, top - 2), (cx - half, base - (h // 3) * (2 - i) + 2),
-                       (cx + half, base - (h // 3) * (2 - i) + 2)], fill=2)
-        d.line([(cx, base), (cx, base + 2)], fill=2)
-
-    for cx, h, w in ((14, 18, 12), (26, 24, 14), (38, 16, 10)):
-        pine(cx, horizon + 4, h, w)
-    for cx, h, w in ((224, 21, 13), (234, 15, 10)):
-        pine(cx, horizon + 3, h, w)
-
-    # 湖面: 暗底 + 月倒影 + 小船渔火 + 涟漪
-    rnd = random.Random(4242)
-    d.rectangle([0, horizon, W - 1, H - 1], fill=5)
-    for y in range(horizon + 2, H, 3):
-        ln = max(3, 12 - (y - horizon) // 3)
-        j = rnd.randrange(-3, 4)
-        d.line([(64 - ln // 2 + j, y), (64 + ln // 2 + j, y)], fill=255)
-
-    bx, by = 152, horizon + 9                      # 小船: 船身 + 渔火
-    d.polygon([(bx, by), (bx + 20, by), (bx + 16, by + 4), (bx + 4, by + 4)], fill=34)
-    d.line([(bx + 10, by - 6), (bx + 10, by)], fill=2)   # 桅杆
-    d.point((bx + 10, by - 7), fill=255)                 # 渔火
-    glow(d, bx + 10, by - 7, 90, 4)
-    if by + 6 < H:
-        d.line([(bx + 8, by + 6), (bx + 13, by + 6)], fill=200)  # 灯的水面反光
-
-    for _ in range(8):
-        y = rnd.randrange(horizon + 4, H)
-        ln = rnd.randrange(5, 12)
-        x0 = rnd.randrange(0, W - ln)
-        d.line([(x0, y), (x0 + ln, y)], fill=60)
+    horizon = 33
+    sky(img, (198, 226, 240), (238, 246, 249), 0, horizon)
+    for r, color in ((10, (246, 214, 128)), (7, (250, 232, 160)), (4, (253, 246, 208))):
+        d.ellipse([38 - r, 10 - r, 38 + r, 10 + r], fill=color)
+    # 云带
+    for (x, y, w, h, c) in ((104, 6, 40, 4, (247, 251, 253)), (118, 3, 20, 4, (240, 247, 251)),
+                            (10, 16, 34, 3, (247, 251, 253)), (186, 14, 30, 3, (240, 247, 251))):
+        d.rectangle([x, y, x + w, y + h], fill=c)
+    # 三层山脊
+    d.polygon([(0, 26), (48, 12), (86, 24), (128, 10), (170, 23), (208, 14), (240, 24), (240, 33), (0, 33)],
+              fill=(143, 179, 201))
+    d.polygon([(0, 30), (36, 18), (74, 29), (110, 17), (150, 28), (196, 20), (240, 29), (240, 33), (0, 33)],
+              fill=(95, 143, 168))
+    d.polygon([(0, 33), (60, 24), (104, 31), (160, 25), (240, 31), (240, 33)], fill=(60, 107, 127))
+    # 松树
+    for i, (x, h) in enumerate(((26, 11), (34, 9), (54, 12), (66, 8), (176, 10), (188, 12), (204, 9), (216, 11))):
+        base = 33
+        for k in range(3):
+            half = (h - k * 3) // 2 + 1
+            y = base - k * 3
+            d.polygon([(x - half, y), (x + half, y), (x, y - 5)], fill=(26, 74, 56))
+        d.rectangle([x - 1, base - 2, x, base + 1], fill=(40, 62, 48))
+    # 湖面 + 倒影 + 帆船
+    d.rectangle([0, horizon, W - 1, H - 1], fill=(127, 179, 196))
+    for i in range(0, W, 12):
+        d.rectangle([i + 4, horizon + 3, i + 9, horizon + 4], fill=(163, 205, 219))
+        d.rectangle([i + 7, horizon + 9, i + 13, horizon + 10], fill=(105, 158, 178))
+    d.polygon([(150, horizon + 4), (162, horizon + 4), (156, horizon - 5)], fill=(232, 115, 74))
+    d.rectangle([148, horizon + 4, 164, horizon + 6], fill=(43, 58, 74))
+    d.rectangle([0, H - 4, W - 1, H - 1], fill=(74, 122, 82))
     return img
 
 
-def to_a8(img):
-    """灰度 → Bayer 1-bit → A8 字节(0/255)。"""
-    bw = bayer_dither(img)
-    px = bw.load()
+def emit_i4(name, path):
+    """LVGL I4 图片格式：开头 16 个 lv_color32_t(BGRA) 调色板，随后每字节两个像素。"""
+    img = Image.open(path).convert('RGB')
+    assert img.size == (W, H), f'{path} 尺寸应为 {W}x{H}'
+    quant = img.quantize(colors=16, method=Image.MEDIANCUT, dither=Image.FLOYDSTEINBERG)
+    palette = quant.getpalette()[:16 * 3]
+    indices = list(quant.getdata())
     out = bytearray()
-    for y in range(H):
-        for x in range(W):
-            out.append(255 if px[x, y] else 0)
-    return bytes(out)
-
-
-def emit(name, data, lines):
-    hexlines = []
-    for i in range(0, len(data), 12):
-        chunk = data[i:i + 12]
-        hexlines.append("    " + " ".join(f"0x{b:02X}," for b in chunk))
-    body = "\n".join(hexlines)
-    lines.append(f"// {name}: {len(data)} 字节 (240×{H} A8,仅 0/255)")
-    lines.append(f"const uint8_t {name}[{len(data)}] = {{\n{body}\n}};\n")
+    for i in range(16):
+        r, g, b = palette[i * 3:i * 3 + 3]
+        out += bytes((b, g, r, 0xFF))
+    for i in range(0, len(indices), 2):
+        low = indices[i + 1] if i + 1 < len(indices) else 0
+        out.append(((indices[i] & 0x0F) << 4) | (low & 0x0F))
+    lines = []
+    for i in range(0, len(out), 16):
+        lines.append('    ' + ', '.join('0x%02X' % v for v in out[i:i + 16]) + ',')
+    return ('// %s: 240x52 I4（16 色调色板 + 4bpp），由 tools/gen_band_art.py 生成，勿手改\n'
+            'const uint8_t %s[BAND_ART_BYTES] = {\n%s\n};\n\n'
+            % (os.path.basename(path), name, '\n'.join(lines)))
 
 
 def main():
-    scenes = [("kBandArtCity", draw_city()), ("kBandArtMountain", draw_mountain())]
-
-    c = [
-        "// main/apps/home/band_art.c —— 首页绿磷光底图(A8 alpha 图,由 tools/gen_band_art.py 生成)。",
-        "// lv_image + style image_recolor(磷光绿) 显示:alpha 1 → 绿点,0 → 透出黑底。",
-        "// 内置图放 flash 零 RAM;重新生成请跑 python tools/gen_band_art.py,勿手改。",
-        "#include \"apps/home/band_art.h\"",
-        "",
-    ]
-    for name, img in scenes:
-        emit(name, to_a8(img), c)
-
-    with open(OUT_C, "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(c))
-
-    h = [
-        "// main/apps/home/band_art.h —— 内置底图(A8)。见 band_art.c 头注释。",
-        "#pragma once",
-        "",
-        "#include <stdint.h>",
-        "#include \"lvgl.h\"",
-        "",
-        "#ifdef __cplusplus",
-        "extern \"C\" {",
-        "#endif",
-        "",
-        "#define BAND_ART_W 240",
-        "#define BAND_ART_H 80",
-        "",
-        "extern const uint8_t kBandArtCity[BAND_ART_W * BAND_ART_H];",
-        "extern const uint8_t kBandArtMountain[BAND_ART_W * BAND_ART_H];",
-        "",
-        "#ifdef __cplusplus",
-        "}",
-        "#endif",
-    ]
-    with open(OUT_H, "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(h) + "\n")
-
-    print("OK: wrote", OUT_C, "and", OUT_H)
+    os.makedirs(OUT_PNG, exist_ok=True)
+    city_path = os.path.join(OUT_PNG, 'city.png')
+    lake_path = os.path.join(OUT_PNG, 'lake.png')
+    city().save(city_path)
+    lake().save(lake_path)
+    body = ('// main/apps/home/band_art.c —— 首页底部 240×52 底图（I4 16 色调色板）。\n'
+            '// 由 tools/gen_band_art.py 生成：构图见 tools/band_art/*.png，改图请改脚本重跑。\n'
+            '#include "apps/home/band_art.h"\n\n')
+    body += emit_i4('kBandArtCity', city_path)
+    body += emit_i4('kBandArtMountain', lake_path)
+    with open(OUT_C, 'w', encoding='utf-8', newline='\n') as handle:
+        handle.write(body)
+    print('generated', OUT_C, os.path.getsize(OUT_C), 'bytes')
+    print('preview:', city_path, lake_path)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
