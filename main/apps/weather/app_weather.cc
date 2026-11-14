@@ -26,6 +26,7 @@
 #include "wifi_manager.h"
 
 #include <cstdio>
+#include <ctime>
 #include <cstring>
 
 namespace {
@@ -61,6 +62,9 @@ ui_pixel_battery_t s_battery;
 lv_timer_t *s_timer;
 TaskHandle_t s_task;
 volatile bool s_busy;
+lv_obj_t *s_footer;          // 底部提示（刷新中/操作提示）
+bool s_refreshing_shown;     // 当前 footer 是否已显示"刷新中"
+bool s_force_refresh;        // 用户点"确定刷新"时强制拉一次
 volatile bool s_dirty = true;
 uint32_t s_seen_version = 0xFFFFFFFFu;
 
@@ -206,6 +210,42 @@ void fmt_clock(int minutes, char *out, size_t capacity)
     snprintf(out, capacity, "%02d:%02d", minutes / 60, minutes % 60);
 }
 
+// 底部提示是一整块可重建对象：切换"刷新中…"与"确定刷新"只需重建这两行。
+void set_footer(const char *action)
+{
+    if (s_footer) {
+        lv_obj_delete(s_footer);
+        s_footer = nullptr;
+    }
+    s_footer = ui_pixel_footer(s_screen, action, "长按返回", &buddy_font_16);
+}
+
+// 缓存是否过期：未校时（updated_at 为 0）也视为过期，只为了先拿一份数据。
+bool weather_data_stale()
+{
+    home_weather_t current = {};
+    if (!home_weather_get(&current)) return true;
+    const time_t now = time(nullptr);
+    if (current.updated_at == 0 || now < (time_t)1700000000) return true;
+    return (uint64_t)now > (uint64_t)current.updated_at + 3600u;
+}
+
+// 空气质量 get() 自带 30 分钟新鲜度判断，这里直接复用它。
+bool air_data_stale()
+{
+    home_air_quality_t air = {};
+    return !home_air_quality_get(&air);
+}
+
+// footer 只在"忙/闲"切换时重建，避免每 500ms 抖动一次。
+void sync_refresh_footer()
+{
+    const bool busy = s_busy || home_weather_fetching() || home_air_quality_fetching();
+    if (busy == s_refreshing_shown) return;
+    s_refreshing_shown = busy;
+    set_footer(busy ? "刷新中…" : "确定刷新");
+}
+
 lv_obj_t *icon_cell(lv_obj_t *parent, int x, int y, int w, int h)
 {
     lv_obj_t *cell = lv_obj_create(parent);
@@ -293,7 +333,7 @@ void build_ui()
         lv_obj_set_style_text_align(s_day_temp[i], LV_TEXT_ALIGN_RIGHT, 0);
     }
 
-    ui_pixel_footer(s_screen, "确定刷新", "长按返回", &buddy_font_16);
+    set_footer("确定刷新");
 }
 
 void update_ui()
@@ -399,10 +439,17 @@ void refresh_task(void *)
     home_profile_t profile;
     home_profile_get(&profile);
     if (profile.lat[0] && profile.lon[0]) {
-        const esp_err_t weather = home_weather_refresh(profile.lat, profile.lon);
-        if (weather != ESP_OK) ESP_LOGW(kTag, "Weather refresh failed: %s", esp_err_to_name(weather));
-        const esp_err_t air = home_air_quality_refresh(profile.lat, profile.lon);
-        if (air != ESP_OK) ESP_LOGW(kTag, "Air quality refresh failed: %s", esp_err_to_name(air));
+        // 首页/其它入口可能刚刚更新过，只补过期的部分，省掉一次 TLS 往返。
+        const bool want_weather = s_force_refresh || weather_data_stale();
+        const bool want_air = s_force_refresh || air_data_stale();
+        if (want_weather) {
+            const esp_err_t weather = home_weather_refresh(profile.lat, profile.lon);
+            if (weather != ESP_OK) ESP_LOGW(kTag, "Weather refresh failed: %s", esp_err_to_name(weather));
+        }
+        if (want_air) {
+            const esp_err_t air = home_air_quality_refresh(profile.lat, profile.lon);
+            if (air != ESP_OK) ESP_LOGW(kTag, "Air quality refresh failed: %s", esp_err_to_name(air));
+        }
     } else {
         ESP_LOGW(kTag, "No coordinates: set the city on the phone setup page");
     }
@@ -411,9 +458,13 @@ void refresh_task(void *)
     vTaskDelete(nullptr);
 }
 
-void start_refresh()
+// 进入页面时调用：缓存新鲜就完全不联网，保证"秒开"；
+// 有别的入口正在拉（首页后台刷新）则等它，不重复请求。
+void begin_refresh(bool force)
 {
-    if (s_task || s_busy) return;
+    if (s_task || home_weather_fetching() || home_air_quality_fetching()) return;
+    if (!force && !weather_data_stale() && !air_data_stale()) return;
+    s_force_refresh = force;
     s_busy = true;
     if (xTaskCreate(refresh_task, "weather_fetch", 4096, nullptr, 5, &s_task) != pdPASS) {
         s_busy = false;
@@ -425,6 +476,7 @@ void start_refresh()
 void tick(lv_timer_t *)
 {
     if (!s_screen || !app_registry_screen_is_on()) return;
+    sync_refresh_footer();
     const uint32_t version = home_weather_version();
     if (s_dirty || version != s_seen_version) {
         s_dirty = false;
@@ -453,8 +505,9 @@ static void weather_start(void)
     }
     lv_scr_load(s_screen);
     if (!s_timer) s_timer = lv_timer_create(tick, 500, nullptr);
+    sync_refresh_footer();
     bsp_lvgl_unlock();
-    start_refresh();
+    begin_refresh(false);
 }
 
 static void weather_stop(void)
@@ -489,10 +542,11 @@ static void weather_on_key(uint8_t btn, app_btn_event_t event, uint16_t mv)
         app_registry_switch_to(APP_ID_LAUNCHER);
         return;
     }
-    if (event == BTN_EVT_CLICK) start_refresh();
+    if (event == BTN_EVT_CLICK) begin_refresh(true);
 }
 
-static bool weather_prepare_stop(void) { return !s_busy; }
+// 离开不等网络：stop() 会取消在途请求，后台任务自行收尾。
+static bool weather_prepare_stop(void) { return true; }
 
 // extern：C++ 里命名空间作用域的 const 默认内部链接，注册表在另一个翻译单元
 // 引用它，必须显式外部链接（与 app_pomodoro.cc 同一写法）。

@@ -36,6 +36,8 @@ static int64_t s_air_updated_us;
 static char s_air_lat[HOME_COORD_MAX], s_air_lon[HOME_COORD_MAX];
 static home_forecast_t s_forecast;
 static bool s_requests_cancelled;
+static volatile bool s_weather_fetching;
+static volatile bool s_air_fetching;
 
 void home_weather_allow_requests(void) {
     portENTER_CRITICAL(&s_weather_mux);
@@ -474,7 +476,10 @@ esp_err_t home_weather_refresh(const char *lat, const char *lon) {
              "&hourly=temperature_2m,weather_code,precipitation_probability"
              "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_hours,sunrise,sunset"
              "&forecast_hours=24&forecast_days=4&timezone=auto", lat, lon);
-    return fetch_current(url, lat, lon, weather_parse);
+    s_weather_fetching = true;
+    const esp_err_t err = fetch_current(url, lat, lon, weather_parse);
+    s_weather_fetching = false;
+    return err;
 }
 
 static esp_err_t air_parse(const char *body, const char *lat, const char *lon) {
@@ -522,5 +527,11 @@ esp_err_t home_air_quality_refresh(const char *lat, const char *lon) {
     snprintf(url, sizeof(url),
              "https://air-quality-api.open-meteo.com/v1/air-quality"
              "?latitude=%s&longitude=%s&current=pm2_5&timezone=auto", lat, lon);
-    return fetch_current(url, lat, lon, air_parse);
+    s_air_fetching = true;
+    const esp_err_t err = fetch_current(url, lat, lon, air_parse);
+    s_air_fetching = false;
+    return err;
 }
+
+bool home_weather_fetching(void) { return s_weather_fetching; }
+bool home_air_quality_fetching(void) { return s_air_fetching; }

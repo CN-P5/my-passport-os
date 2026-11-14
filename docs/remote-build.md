@@ -6,18 +6,27 @@ Windows 侧没有 ESP-IDF 工具链，WSL 里编译虽然可行，但把构建�
 
 ## 日常用法
 
+脚本用 paramiko 走 SSH/SFTP，**Windows / Linux / macOS 都能直接跑，不需要 WSL，也不需要 sshpass**：
+
 ```bash
 # 增量编译（保留远端的 managed_components 与 build/）
-POS_HOST=192.168.10.204 POS_PW=<密码> bash tools/build-remote.sh
+POS_HOST=192.168.10.204 POS_PW=<密码> python tools/build-remote.py
 
 # 全量重编
-POS_HOST=192.168.10.204 POS_PW=<密码> bash tools/build-remote.sh --clean
+POS_HOST=192.168.10.204 POS_PW=<密码> python tools/build-remote.py --clean
 
 # 顺便把 app 镜像与整包镜像取回到本地目录
-POS_HOST=192.168.10.204 POS_PW=<密码> bash tools/build-remote.sh --fetch ../_work/build
+POS_HOST=192.168.10.204 POS_PW=<密码> python tools/build-remote.py --fetch ../_work/build
 ```
 
-密码只通过环境变量经 `sshpass` 传递，不写进仓库、不写进脚本。
+Windows PowerShell 写法：
+
+```powershell
+$env:POS_HOST='192.168.10.204'; $env:POS_PW='<密码>'
+python tools/build-remote.py --fetch ..\_work\build
+```
+
+密码只通过环境变量传递，不写进仓库。WSL 只需要在有需要时跑宿主测试（`tools/test-host.sh` 依赖 cc/bash）。
 
 ## 一次性准备
 

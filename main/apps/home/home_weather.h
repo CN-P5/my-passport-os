@@ -97,6 +97,11 @@ esp_err_t home_weather_refresh(const char *lat, const char *lon);
 // 返回 "离线数据"。纯函数,便于宿主测试。
 void home_weather_age_text(uint32_t updated_at, int64_t now, char *out, size_t capacity);
 
+// 天气/空气质量请求是否在途：首页与天气页共用同一份缓存，
+// 天气页进入时据此避免再发一次重复的 TLS 请求。
+bool home_weather_fetching(void);
+bool home_air_quality_fetching(void);
+
 // 每次成功刷新递增,UI 据此刷新天气行。
 uint32_t home_weather_version(void);
 
