@@ -24,7 +24,7 @@ let failCities=false,cityGate=null;let savedProfile={name:'测试',signature:'�
 const phoneWindow={__T:314159,scrollTo(){},addEventListener(){},isSecureContext:false,crypto:require('node:crypto').webcrypto,location:{origin:'http://192.168.4.1'}};
 const phoneNavigator={};
 class TestURL extends URL{static createObjectURL(){return 'blob:fixture'}static revokeObjectURL(){}}
-const context=vm.createContext({document:{getElementById:get,createElement:()=>new Element()},window:phoneWindow,navigator:phoneNavigator,Option:class{constructor(text,value){this.text=text;this.value=value;this.dataset={}}},Image,TextEncoder,Uint8Array,Uint8ClampedArray,Blob,AbortController,URL:TestURL,URLSearchParams,setTimeout(fn,ms){const id=nextTimer++;timers.set(id,{fn,ms});return id},clearTimeout:id=>timers.delete(id),fetch:async(url,options)=>{
+const context=vm.createContext({document:{cookie:'pt=314159',getElementById:get,createElement:()=>new Element()},window:phoneWindow,navigator:phoneNavigator,Option:class{constructor(text,value){this.text=text;this.value=value;this.dataset={}}},Image,TextEncoder,Uint8Array,Uint8ClampedArray,Blob,AbortController,URL:TestURL,URLSearchParams,setTimeout(fn,ms){const id=nextTimer++;timers.set(id,{fn,ms});return id},clearTimeout:id=>timers.delete(id),fetch:async(url,options)=>{
  requests.push({url,options});let result={},ok=true;
  if(url.startsWith('/api/cities')){if(cityGate)await cityGate;if(failCities)throw new Error('offline');result=cityCatalog;}
  if(url.startsWith('/api/profile')&&!options.method)result=savedProfile;

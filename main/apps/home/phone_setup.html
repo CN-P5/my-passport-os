@@ -89,6 +89,8 @@ details{border-top:1px solid var(--line);padding:20px 0}summary{cursor:pointer;f
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
+// 设备把一次性 token 放在 cookie(pt=) 里(页面固化为 gzip 后无法再注入脚本)，这里统一读取。
+const TOKEN=(()=>{const m=document.cookie.match(/(?:^|;\s*)pt=(\d+)/);return m?m[1]:(window.__T||'')})();
 const say=(id,text,error=false)=>{const el=$(id);el.textContent=text;el.dataset.error=String(error)};
 const bytes=s=>new TextEncoder().encode(s).length;
 let page=1,manual=false,busy=false,hasSaved=false,verified=false,pollTimer=null,polls=0;
@@ -126,7 +128,7 @@ async function api(path,body){
  if(body!==undefined){options.method='POST';options.body=body instanceof Uint8Array||body instanceof Blob?body:JSON.stringify(body);if(typeof options.body==='string')options.headers={'Content-Type':'application/json'}}
  let r,j={};
  try{
-  r=await fetch(path+(path.includes('?')?'&':'?')+'t='+encodeURIComponent(window.__T||''),options);
+  r=await fetch(path+(path.includes('?')?'&':'?')+'t='+encodeURIComponent(TOKEN),options);
   try{j=await r.json()}catch(e){if(controller.signal.aborted)throw e}
  }catch(e){e.path=path;throw e}finally{clearTimeout(timer)}
  if(!r.ok){
@@ -274,7 +276,7 @@ async function selectPortrait(input){say('avatarStatus','正在读取图片…')
 $('zm').oninput=()=>{if(!portrait)return;const z=Number($('zm').value)/100;ox=VP.w/2-(VP.w/2-ox)*z/zoom;oy=VP.h/2-(VP.h/2-oy)*z/zoom;zoom=z;clamp();previewPortrait()};let drag=null;
 $('vp').onpointerdown=e=>{if(!portrait)return;drag={x:e.clientX,y:e.clientY,ox,oy};$('vp').setPointerCapture(e.pointerId)};$('vp').onpointermove=e=>{if(!drag)return;ox=drag.ox+e.clientX-drag.x;oy=drag.oy+e.clientY-drag.y;clamp()};$('vp').onpointerup=$('vp').onpointercancel=()=>{if(drag){drag=null;previewPortrait()}};
 function drawShare(){const c=$('sharec'),g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,240,320);const scale=Math.min(240/shareImg.naturalWidth,320/shareImg.naturalHeight),w=Math.round(shareImg.naturalWidth*scale),h=Math.round(shareImg.naturalHeight*scale);g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(shareImg,Math.floor((240-w)/2),Math.floor((320-h)/2),w,h)}
-function cardUrl(slot){return '/api/share?slot='+slot+'&t='+encodeURIComponent(window.__T||'')}
+function cardUrl(slot){return '/api/share?slot='+slot+'&t='+encodeURIComponent(TOKEN)}
 function galleryUsage(){const total=cards.reduce((n,c)=>n+c.bytes,0);$('shareState').textContent=cards.length+' / '+CARD_MAX+' 张';$('cardUsage').textContent='已选 '+cards.length+' / '+CARD_MAX+' 张 · '+(total/1024).toFixed(1)+' / 144 KB'+(cardStorage?' · 设备剩余约 '+Math.floor(cardStorage.storage_free/1024)+' KB':'');}
 function renderCards(){$('sharePickLabel').textContent=cards.length===CARD_MAX?'图片已满，可移除或替换':'一次添加多张图片（还可添加 '+(CARD_MAX-cards.length)+' 张）';const list=$('cardList');list.replaceChildren();galleryUsage();if(!cards.length){const empty=document.createElement('p');empty.className='card-empty';empty.textContent='还没有名片图片。可以添加微信名片、联系方式或其它展示图片。';list.appendChild(empty)}for(const [i,card] of cards.entries()){const row=document.createElement('div');row.className='card-row';const img=document.createElement('img');img.className='card-thumb';img.alt='名片图片 '+(i+1);img.src=card.preview||cardUrl(card.slot);const meta=document.createElement('div');meta.className='card-meta';const title=document.createElement('p');title.textContent='第 '+(i+1)+' 张 · '+(card.bytes/1024).toFixed(1)+' KB'+(card.blob?' · 待保存':'');const actions=document.createElement('div');actions.className='card-actions';for(const [label,action,disabled] of [['替换',()=>chooseReplacement(card.slot),false],['上移',()=>moveCard(i,-1),i===0],['下移',()=>moveCard(i,1),i===cards.length-1],['移除',()=>removeCard(i),false]]){const button=document.createElement('button');button.type='button';button.textContent=label;button.setAttribute('aria-label',label+'第 '+(i+1)+' 张图片');button.disabled=disabled||cardBusy||$('save').disabled;if(label==='移除')button.className='remove';button.onclick=action;actions.appendChild(button)}meta.appendChild(title);meta.appendChild(actions);row.appendChild(img);row.appendChild(meta);list.appendChild(row)}}
 function chooseReplacement(slot){if(cardBusy||$('save').disabled)return;replaceSlot=slot;$('shareReplace').value='';$('shareReplace').click();say('shareStatus','请选择 1 张图片替换当前图片；批量添加请使用上面的多选入口。')}
