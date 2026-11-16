@@ -157,6 +157,9 @@ IconPalette icon_palette_for(passport_app_id_t id) {
         case APP_ID_POMODORO: return {0xE2554F, 0x2F8F5B, 0xF7B267};
         case APP_ID_SETTINGS: return {0x9AA6B2, 0xA5315B, 0xDDE3EA};
         case APP_ID_WEATHER: return {0x3B82C4, 0x2A5C8F, 0xF7C948};
+        case APP_ID_NETEASE: return {0xD8382F, 0x1E1616, 0xF7EFE6};
+        case APP_ID_REMINDERS: return {0xF2B233, 0x6B4410, 0xF6F2E7};
+        case APP_ID_LISTS: return {0x4FA8E0, 0x1F3F5C, 0xEEF4F9};
         default: return {0x8FB8A8, 0x4E7468, 0xD6E7DF};
     }
 }
@@ -284,6 +287,37 @@ void draw_app_icon(passport_app_id_t id, uint32_t theme_color) {
             set_part(6, 24, 58, 6, 14, detail);     // 雨
             set_part(7, 40, 58, 6, 14, detail);
             set_part(8, 56, 58, 6, 14, detail);
+            break;
+        case APP_ID_NETEASE:
+            // 网易云音乐:红框唱片(四边合成) + 中心轴 + 黑音符
+            set_part(0, 8, 8, 72, 72, warm);       // 盘面
+            set_part(1, 8, 8, 72, 9, color);       // 框:上
+            set_part(2, 8, 71, 72, 9, color);      // 框:下
+            set_part(3, 8, 8, 9, 72, color);       // 框:左
+            set_part(4, 71, 8, 9, 72, color);      // 框:右
+            set_part(5, 36, 36, 16, 16, detail);   // 中心轴
+            set_part(6, 58, 20, 8, 30, detail);    // 音符杆
+            set_part(7, 46, 44, 16, 8, detail);    // 音符头
+            break;
+        case APP_ID_REMINDERS:
+            // 备忘提醒:便签 + 书脊 + 三行待办 + 右上铃铛
+            set_part(0, 10, 12, 68, 66, warm);     // 纸
+            set_part(1, 10, 12, 8, 66, color);     // 书脊
+            set_part(2, 28, 26, 34, 7, detail);    // 待办 1
+            set_part(3, 28, 40, 34, 7, detail);    // 待办 2
+            set_part(4, 28, 54, 22, 7, detail);    // 待办 3
+            set_part(5, 54, 44, 18, 16, color);    // 铃身
+            set_part(6, 49, 60, 28, 7, color);     // 铃口
+            set_part(7, 60, 38, 6, 6, detail);     // 铃钮
+            break;
+        case APP_ID_LISTS:
+            // 文字清单:三个勾选框 + 三条横线
+            set_part(0, 12, 14, 18, 18, color);
+            set_part(1, 12, 38, 18, 18, color);
+            set_part(2, 12, 62, 18, 18, color);
+            set_part(3, 38, 19, 38, 8, detail);
+            set_part(4, 38, 43, 38, 8, detail);
+            set_part(5, 38, 67, 38, 8, detail);
             break;
         default:
             break;
