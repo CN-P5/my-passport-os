@@ -421,6 +421,38 @@ void settings_set_volume(uint8_t percent) {
     if (result != ESP_OK) ESP_LOGW(kTag, "Failed to save volume: %s", esp_err_to_name(result));
 }
 
+namespace {
+// 供小智设备工具读取/落盘音量和亮度（rc.59 的 device_control 依赖这几个入口）。
+bool save_percent_persist(const char *key, uint8_t percent) {
+    nvs_handle_t handle;
+    esp_err_t result = nvs_open(kNvsNamespace, NVS_READWRITE, &handle);
+    if (result == ESP_OK) {
+        result = nvs_set_u8(handle, key, percent);
+        if (result == ESP_OK) result = nvs_commit(handle);
+        nvs_close(handle);
+    }
+    if (result != ESP_OK) ESP_LOGW(kTag, "Failed to save %s: %s", key, esp_err_to_name(result));
+    return result == ESP_OK;
+}
+}  // namespace
+uint8_t settings_get_volume(void) { return s_volume; }
+uint8_t settings_get_brightness(void) { return s_brightness; }
+bool settings_save_volume(uint8_t percent) {
+    if (percent > 100 || !save_percent_persist("volume", percent)) return false;
+    s_volume = percent;
+    bsp_audio_set_master_volume(percent);
+    return true;
+}
+bool settings_save_brightness(uint8_t percent) {
+    if (percent < 10 || percent > 100 || !save_percent_persist("brightness", percent)) return false;
+    s_brightness = percent;
+    s_outdoor_until_us = 0;
+    s_outdoor_restore = percent;
+    const int battery = bsp_battery_soc();
+    bsp_display_set_master_brightness(battery >= 0 && battery < 10 ? std::min<uint8_t>(percent, 60) : percent);
+    return true;
+}
+
 const passport_app_t g_settings_app = {
     .id = APP_ID_SETTINGS,
     .name = "设置",

@@ -70,7 +70,7 @@ void wifi_setup_start(void) {
         line("1 连接设备热点",84,UI_TEXT_DIM);
         line(wifi.GetApSsid().c_str(),112,UI_ACCENT,&lv_font_montserrat_14);
         line("2 手机浏览器打开",158,UI_TEXT_DIM);
-        line("192.168.4.1",190,UI_ACCENT,&lv_font_montserrat_32);
+        line("192.168.4.1",190,UI_ACCENT,&ui_digits_32);
     }
     s_status=line(err==ESP_OK?(s_lan_mode.load()?"浏览器输入上面的地址":"提示无互联网时选保留")
                             :"服务未启动，确定重试",242,UI_TEXT_DIM);
