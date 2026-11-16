@@ -510,7 +510,11 @@ static esp_err_t handler_finish(httpd_req_t *req) {
 
 esp_err_t home_upload_start(void) {
     if (s_server) return ESP_OK;
-    if (!WifiManager::GetInstance().IsConfigMode()) return ESP_ERR_INVALID_STATE;
+    // 配置模式(设备热点)或已连上已保存的网络(局域网直连)都允许开服务：
+    // httpd 绑定 INADDR_ANY，同一局域网里的手机直接访问设备 IP 即可。
+    auto &wifi = WifiManager::GetInstance();
+    const bool lan_access = wifi.IsConnected() && !wifi.GetIpAddress().empty();
+    if (!wifi.IsConfigMode() && !lan_access) return ESP_ERR_INVALID_STATE;
     s_network_state = 0; s_finish_at = 0; s_target_ssid.clear();
     s_saved_networks = SsidManager::GetInstance().GetSsidList();
     s_had_saved = !s_saved_networks.empty();
@@ -577,8 +581,10 @@ esp_err_t home_upload_start(void) {
         }
     }
 
-    snprintf(s_url, sizeof(s_url), "http://%s",
-             "192.168.4.1");
+    // 展示地址要跟着实际接入方式走：设备热点固定 192.168.4.1，
+    // 局域网直连则用当前 IP，否则页面/日志里给出的地址根本打不开。
+    const std::string lan_ip = wifi.IsConnected() ? wifi.GetIpAddress() : std::string();
+    snprintf(s_url, sizeof(s_url), "http://%s", lan_ip.empty() ? "192.168.4.1" : lan_ip.c_str());
     ESP_LOGI(TAG, "Upload server started at %s", s_url);
     return ESP_OK;
 }

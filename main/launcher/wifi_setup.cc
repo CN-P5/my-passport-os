@@ -12,11 +12,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <atomic>
+#include <string>
 
 namespace {
 std::atomic<bool> s_required{false};
 std::atomic<bool> s_active{false};
 std::atomic<bool> s_completing{false};
+// 已连上已保存网络时走"局域网直连"：不开热点，手机访问设备 IP。
+std::atomic<bool> s_lan_mode{false};
 lv_obj_t *s_screen = nullptr;
 lv_obj_t *s_status = nullptr;
 ui_pixel_battery_t s_battery{};
@@ -40,7 +43,11 @@ void wifi_setup_start(void) {
     home_profile_init();
     if (SsidManager::GetInstance().GetSsidList().empty()) s_required = true;
     auto &wifi = WifiManager::GetInstance();
-    wifi.StartConfigAp(true); // DNS/AP only; one shared HTTP server owns the full flow.
+    // 已经在已保存的网络上：不必让手机切到设备热点，直接把配置服务开在当前 IP，
+    // 同一局域网内的手机用浏览器访问该 IP 即可。
+    const std::string lan_ip = wifi.IsConnected() ? wifi.GetIpAddress() : std::string();
+    s_lan_mode = !lan_ip.empty();
+    if (!s_lan_mode.load()) wifi.StartConfigAp(true); // DNS/AP only; HTTP server 在 home_upload
     const auto err = home_upload_start();
     bsp_lvgl_lock(-1);
     s_screen = lv_obj_create(nullptr);
@@ -54,11 +61,19 @@ void wifi_setup_start(void) {
     // The complete product name needs slightly more than the usual 216px row.
     lv_obj_set_pos(welcome, 8, 44);
     lv_obj_set_width(welcome, 224);
-    line("1 连接设备热点",84,UI_TEXT_DIM);
-    line(wifi.GetApSsid().c_str(),112,UI_ACCENT,&lv_font_montserrat_14);
-    line("2 手机浏览器打开",158,UI_TEXT_DIM);
-    line("192.168.4.1",190,UI_ACCENT,&lv_font_montserrat_32);
-    s_status=line(err==ESP_OK?"提示无互联网时选保留":"服务未启动，确定重试",242,UI_TEXT_DIM);
+    if (s_lan_mode.load()) {
+        line("已连接到",84,UI_TEXT_DIM);
+        line(wifi.GetSsid().c_str(),112,UI_ACCENT,&lv_font_montserrat_14);
+        line("手机连同一网络后打开",158,UI_TEXT_DIM);
+        line(lan_ip.c_str(),190,UI_ACCENT,&lv_font_montserrat_20);
+    } else {
+        line("1 连接设备热点",84,UI_TEXT_DIM);
+        line(wifi.GetApSsid().c_str(),112,UI_ACCENT,&lv_font_montserrat_14);
+        line("2 手机浏览器打开",158,UI_TEXT_DIM);
+        line("192.168.4.1",190,UI_ACCENT,&lv_font_montserrat_32);
+    }
+    s_status=line(err==ESP_OK?(s_lan_mode.load()?"浏览器输入上面的地址":"提示无互联网时选保留")
+                            :"服务未启动，确定重试",242,UI_TEXT_DIM);
     lv_obj_set_height(s_status,22);lv_label_set_long_mode(s_status,LV_LABEL_LONG_DOT);
     ui_pixel_footer(s_screen,"配网、资料、名片一起设置",s_required?"长按确定跳过配网":"长按确定返回首页",&buddy_font_16);
     lv_screen_load(s_screen);
@@ -69,8 +84,12 @@ void wifi_setup_start(void) {
 void wifi_setup_stop(void) {
     s_active = false;
     home_upload_stop();
-    WifiManager::GetInstance().StopConfigAp();
-    if (!SsidManager::GetInstance().GetSsidList().empty()) WifiManager::GetInstance().StartStation();
+    if (!s_lan_mode.load()) {
+        // 只有走过热点模式才需要收 AP、恢复 STA；局域网直连时保持现有连接不动。
+        WifiManager::GetInstance().StopConfigAp();
+        if (!SsidManager::GetInstance().GetSsidList().empty()) WifiManager::GetInstance().StartStation();
+    }
+    s_lan_mode = false;
     bsp_lvgl_lock(-1);
     if (s_screen) lv_obj_delete(s_screen);
     s_screen = s_status = nullptr;
@@ -103,9 +122,11 @@ void wifi_setup_tick(void) {
     }
     if (bsp_lvgl_lock(50)) {
         if(s_screen&&lv_tick_get()-s_battery_tick>=5000){ui_pixel_battery_set(&s_battery,bsp_battery_soc());s_battery_tick=lv_tick_get();}
-        if (s_status) ui_pixel_label_set_text(s_status, home_upload_busy() ? "正在连接，请保持热点" :
+        if (s_status) ui_pixel_label_set_text(s_status,
+                    home_upload_busy() ? (s_lan_mode.load() ? "正在连接，请稍候" : "正在连接，请保持热点") :
                     home_upload_network_verified() ? "联网成功，手机继续设置" :
-                    home_upload_active() ? "提示无互联网时选保留" : "服务未启动，确定重试");
+                    home_upload_active() ? (s_lan_mode.load() ? "浏览器输入上面的地址" : "提示无互联网时选保留")
+                                         : "服务未启动，确定重试");
         bsp_lvgl_unlock();
     }
 }
