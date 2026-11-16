@@ -29,6 +29,10 @@ static const char *TAG = "home_upload";
 
 static httpd_handle_t s_server;
 static char s_url[32];
+// 本机可访问 IP：设备热点模式是 192.168.4.1，局域网直连时是 STA 拿到的 IP。
+// Host 判断与 302 目标都必须跟着它走，否则局域网访问会被重定向回 192.168.4.1。
+static char s_local_ip[24] = "192.168.4.1";
+static char s_location[40] = "http://192.168.4.1/";
 
 // 2026-09-13 修复(B8):上传接口原先完全无鉴权,同一局域网任何人都能 POST
 // /api/profile 或 /api/avatar 改写名片与人像。现在每次开启上传窗口生成一个
@@ -76,9 +80,18 @@ static esp_err_t send_json(httpd_req_t *req, int status, const char *json) {
     return ESP_OK;
 }
 
+// Host 头可能是 "192.168.4.1"、"192.168.4.1:80"、"192.168.100.23" 等，
+// 去掉端口后与本机 IP 比较即可，不再写死 192.168.4.1。
+static bool host_is_self(const char *host) {
+    if (!host || !host[0]) return false;
+    const size_t len = strlen(s_local_ip);
+    if (strncmp(host, s_local_ip, len) != 0) return false;
+    return host[len] == '\0' || host[len] == ':';
+}
+
 static esp_err_t handler_captive(httpd_req_t *req) {
     httpd_resp_set_status(req, "302 Found");
-    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+    httpd_resp_set_hdr(req, "Location", s_location);
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, max-age=0");
     return httpd_resp_send(req, nullptr, 0);
 }
@@ -86,7 +99,7 @@ static esp_err_t handler_captive(httpd_req_t *req) {
 static esp_err_t handler_index(httpd_req_t *req) {
     char host[64];
     if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK ||
-        (strcmp(host, "192.168.4.1") && strcmp(host, "192.168.4.1:80")))
+        !host_is_self(host))
         return handler_captive(req);
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, max-age=0");
@@ -581,10 +594,12 @@ esp_err_t home_upload_start(void) {
         }
     }
 
-    // 展示地址要跟着实际接入方式走：设备热点固定 192.168.4.1，
-    // 局域网直连则用当前 IP，否则页面/日志里给出的地址根本打不开。
+    // 展示地址/重定向目标要跟着实际接入方式走：设备热点固定 192.168.4.1，
+    // 局域网直连则用当前 IP，否则页面给出的地址打不开、访问 IP 还会被 302 回去。
     const std::string lan_ip = wifi.IsConnected() ? wifi.GetIpAddress() : std::string();
-    snprintf(s_url, sizeof(s_url), "http://%s", lan_ip.empty() ? "192.168.4.1" : lan_ip.c_str());
+    snprintf(s_local_ip, sizeof(s_local_ip), "%s", lan_ip.empty() ? "192.168.4.1" : lan_ip.c_str());
+    snprintf(s_url, sizeof(s_url), "http://%s", s_local_ip);
+    snprintf(s_location, sizeof(s_location), "http://%s/", s_local_ip);
     ESP_LOGI(TAG, "Upload server started at %s", s_url);
     return ESP_OK;
 }
