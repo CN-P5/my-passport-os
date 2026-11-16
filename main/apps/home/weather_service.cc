@@ -47,8 +47,12 @@ struct WeatherSchedule {
     }
 
     void finish(unsigned request, int64_t now, esp_err_t result) {
-        const int64_t next = now + (request == Air ? kAirPeriodMs
-                                    : result != ESP_OK ? kWeatherRetryMs : kWeatherPeriodMs);
+        // 失败一律 2 分钟后再试：空气质量若按成功周期退避，首次失败会让 PM2.5
+        // 空等 30 分钟，用户看到的就是"一直没数据"。
+        const int64_t period = result != ESP_OK
+                                   ? kWeatherRetryMs
+                                   : (request == Air ? kAirPeriodMs : kWeatherPeriodMs);
+        const int64_t next = now + period;
         if (request == Weather) weather_due_ms = next;
         else air_due_ms = next;
     }
@@ -81,11 +85,13 @@ void service_task(void *) {
         s_busy = true;
         if (requests & WeatherSchedule::Weather) {
             const esp_err_t result = home_weather_refresh(profile.lat, profile.lon);
+            if (result != ESP_OK) ESP_LOGW(kTag, "weather refresh failed: %s", esp_err_to_name(result));
             s_schedule.finish(WeatherSchedule::Weather, esp_timer_get_time() / 1000, result);
         }
         // 天气请求失败时，本轮不再继续拉空气质量，等下个重试点一起补。
-        if ((requests & WeatherSchedule::Air)) {
+        if (requests & WeatherSchedule::Air) {
             const esp_err_t result = home_air_quality_refresh(profile.lat, profile.lon);
+            if (result != ESP_OK) ESP_LOGW(kTag, "air refresh failed: %s", esp_err_to_name(result));
             s_schedule.finish(WeatherSchedule::Air, esp_timer_get_time() / 1000, result);
         }
         s_busy = false;

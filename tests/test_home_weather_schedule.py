@@ -50,9 +50,10 @@ int main() {
     retry.begin(WeatherSchedule::Weather,140000,city);
     retry.finish(WeatherSchedule::Weather,145000,ESP_OK);
     assert(retry.due(155000,150000,false,city)==0);
-    // AQ failure does not introduce a new two-minute network retry cycle.
+    // PM2.5 失败同样按 2 分钟重试，否则首次失败要空等 30 分钟。
     retry.finish(WeatherSchedule::Air,150000,ESP_FAIL);
-    assert(retry.due(270000,260000,false,city)==0);
+    assert(retry.due(269999,260000,false,city)==0);
+    assert(retry.due(270000,260000,false,city)==WeatherSchedule::Air);
 
     WeatherSchedule interrupted;
     interrupted.begin(WeatherSchedule::Both,15000,city);
