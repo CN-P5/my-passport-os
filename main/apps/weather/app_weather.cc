@@ -211,6 +211,10 @@ void fmt_clock(int minutes, char *out, size_t capacity)
 // 底部提示是一整块可重建对象：切换"刷新中…"与"确定刷新"只需重建这两行。
 void set_footer(const char *action)
 {
+    if (!s_screen) {
+        s_footer = nullptr;
+        return;
+    }
     if (s_footer) {
         lv_obj_delete(s_footer);
         s_footer = nullptr;
@@ -475,6 +479,12 @@ static void weather_stop(void)
             s_hour_icon[i] = s_hour_hour[i] = s_hour_temp[i] = nullptr;
         }
         s_wifi[0] = s_wifi[1] = s_wifi[2] = nullptr;
+        // 屏幕销毁后 footer 等控件指针一律失效：不清掉的话下次进入会 delete 已释放对象，
+        // LVGL 断言直接 trap（串口表现为 MCAUSE 3 Breakpoint 重启）。
+        s_footer = nullptr;
+        s_refreshing_shown = false;
+        s_battery = {};
+        s_seen_version = 0xFFFFFFFFu;
     }
     bsp_lvgl_unlock();
     home_weather_allow_requests();
