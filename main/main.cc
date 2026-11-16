@@ -1,6 +1,7 @@
 #include "launcher/launcher.h"
 #include "launcher/timer_resume.h"
 #include "launcher/app_registry.h"
+#include "apps/home/weather_service.h"
 #include "launcher/ok_gesture.h"
 #include "boot_chime.h"
 #include "ui_sfx.h"
@@ -432,6 +433,7 @@ extern "C" void app_main(void) {
 
     // 3. 初始化 Launcher 与应用注册表 (仅载入启动器，不预加载子 App)
     app_registry_init();
+    weather_service_start();  // 系统级天气定时刷新（首页/天气页只读缓存）
     // 磷光开机动画(~0.9s,与开机音同步);不再提前初始化/加载 Launcher ——
     // 旧路径会先闪一两帧应用页再跳首页。抽屉首次进入时才会自建界面。
     boot_splash_run();

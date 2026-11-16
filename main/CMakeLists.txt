@@ -71,6 +71,7 @@ idf_component_register(
         "apps/home/home_profile.c"
         "apps/home/home_clock.c"
         "apps/home/home_weather.c"
+    "apps/home/weather_service.cc"
         "apps/home/home_upload.cc"
         "apps/home/app_home.cc"
     "apps/home/band_art.c"

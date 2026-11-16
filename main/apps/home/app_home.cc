@@ -29,6 +29,7 @@
 //   美术显示走 LVGL A8 快速路径(alpha 蒙版 + image_recolor 纯色),已核对
 //   lv_draw_sw_img.c:233 与 lv_draw_sw_blend_to_rgb565.c。
 #include "apps/home/app_home.h"
+#include "apps/home/weather_service.h"
 
 #include "apps/home/home_clock.h"
 #include "apps/home/band_art.h"
@@ -94,45 +95,10 @@ LV_FONT_DECLARE(lv_font_unscii_8);
 constexpr int kMargin = 12;
 constexpr int kContentW = 240 - kMargin * 2;  // 216
 
-constexpr int64_t kWeatherFirstDelayMs = 15000;
-constexpr int64_t kWeatherPeriodMs = 900000;   // 天气 15 分钟一次(上游 rc.59 口径)
-constexpr int64_t kAirPeriodMs = 1800000;      // 空气质量保持 30 分钟一次
-// 失败(信号差/热点刚连上)后 2 分钟再试,而不是干等一个周期。
-constexpr int64_t kWeatherRetryMs = 120000;
 // 超过 2 小时的天气在风级行改为显示"几小时前更新",户外断网时不把旧数据当实时。
 constexpr int64_t kWeatherStaleSec = 7200;
 constexpr int64_t kUploadTimeoutMs = 600000;
 
-// Only the Home worker owns this state. Keep deadlines across app visits so a
-// fresh sample does not cause another pair of TLS requests on every return.
-struct WeatherSchedule {
-    static constexpr unsigned Weather = 1, Air = 2, Both = Weather | Air;
-    int64_t weather_due_ms = -1, air_due_ms = -1;
-    char lat[HOME_COORD_MAX]{}, lon[HOME_COORD_MAX]{};
-
-    unsigned due(int64_t now, int64_t entered, bool force, const home_profile_t &profile) const {
-        if (!profile.lat[0] || !profile.lon[0]) return 0;
-        if (force || (lat[0] && (std::strcmp(lat, profile.lat) || std::strcmp(lon, profile.lon)))) return Both;
-        if (weather_due_ms < 0 && air_due_ms < 0) return now - entered >= kWeatherFirstDelayMs ? Both : 0;
-        return (weather_due_ms <= now ? Weather : 0u) | (air_due_ms <= now ? Air : 0u);
-    }
-
-    void begin(unsigned requests, int64_t now, const home_profile_t &profile) {
-        std::snprintf(lat, sizeof(lat), "%s", profile.lat);
-        std::snprintf(lon, sizeof(lon), "%s", profile.lon);
-        // An interrupted request stays due when the next Home worker starts.
-        if (requests & Weather) weather_due_ms = now;
-        if (requests & Air) air_due_ms = now;
-    }
-
-    void finish(unsigned request, int64_t now, esp_err_t result) {
-        const int64_t next = now + (request == Air ? kAirPeriodMs
-                                    : result != ESP_OK ? kWeatherRetryMs : kWeatherPeriodMs);
-        if (request == Weather) weather_due_ms = next;
-        else air_due_ms = next;
-    }
-};
-WeatherSchedule s_weather_schedule;
 
 // Packed two-bit tone indices; the theme supplies colors at display time.
 // Home owns this buffer only while its screen/worker are alive.
@@ -157,7 +123,6 @@ std::atomic<bool> s_home_active{false};
 // 界面存活开关:home_task 每轮持锁刷新前检查,stop() 删屏前置 false。
 // 解决"stop 超时后任务仍活着却去写已删除 label"这一类的 use-after-free。
 std::atomic<bool> s_ui_alive{false};
-std::atomic<bool> s_force_weather{false};
 int64_t s_manual_weather_ms = -30000;
 TaskHandle_t s_task_handle = nullptr;
 std::atomic<bool> s_worker_running{false};
@@ -1012,7 +977,7 @@ void toggle_share_view() {
     if (!home_profile_has_share_image()) {
         ESP_LOGW(kTag, "UP: no valid wallet card file");
         // 尚未上传随身名片时保留原有的手动天气刷新能力。
-        s_force_weather.store(true);
+        weather_service_request_refresh();
         return;
     }
 
@@ -1084,7 +1049,7 @@ void home_task(void *arg) {
             std::snprintf(previous_lon, sizeof(previous_lon), "%s", prof.lon);
             home_profile_get(&prof);
             if (std::strcmp(previous_lat, prof.lat) || std::strcmp(previous_lon, prof.lon))
-                s_force_weather.store(true);
+                weather_service_request_refresh();
             const bool has = home_profile_has_avatar();
             esp_err_t err = ESP_FAIL;
             if (has) err = read_portrait(true);
@@ -1097,29 +1062,10 @@ void home_task(void *arg) {
             }
         }
 
-        // 首次进入延迟 15s;跨页面复用 30 分钟样本,手动刷新或换城市立即请求。
-        home_profile_get(&prof);
-        const unsigned requests = connected ? s_weather_schedule.due(now_ms, start_ms, s_force_weather.load(), prof) : 0;
-        if (requests) {
-            s_force_weather.store(false);
-            s_weather_schedule.begin(requests, now_ms, prof);
-            // 拉取期间天气卡左侧转四点 spinner(每秒转一格),结束后按结果换图标
-            s_weather_fetching = true;
-            if (bsp_lvgl_lock(1000)) {
-                refresh_weather_ui();
-                bsp_lvgl_unlock();
-            }
-            if (requests & WeatherSchedule::Weather) {
-                const auto result = home_weather_refresh(prof.lat, prof.lon); // 阻塞数秒,不持锁
-                if (s_home_active.load()) s_weather_schedule.finish(WeatherSchedule::Weather, esp_timer_get_time() / 1000, result);
-            }
-            if (s_home_active.load() && (requests & WeatherSchedule::Air)) {
-                const auto result = home_air_quality_refresh(prof.lat, prof.lon);
-                if (s_home_active.load()) s_weather_schedule.finish(WeatherSchedule::Air, esp_timer_get_time() / 1000, result);
-            }
-            s_weather_fetching = false;
-            if (!s_home_active.load()) break;
-            // 无论成败都要刷新一次:成功换天气图标,失败把 spinner 撤下来
+        // 天气数据由 weather_service 统一定时刷新；首页只跟随"忙/完成"状态重绘。
+        const bool fetching = weather_service_busy();
+        if (fetching != s_weather_fetching) {
+            s_weather_fetching = fetching;
             if (bsp_lvgl_lock(1000)) {
                 refresh_weather_ui();
                 bsp_lvgl_unlock();
@@ -1356,7 +1302,7 @@ void home_on_key(uint8_t btn, app_btn_event_t event, uint16_t mv) {
             bsp_lvgl_lock(-1);
             if (now - s_manual_weather_ms >= 30000 && WifiManager::GetInstance().IsConnected()) {
                 s_manual_weather_ms = now;
-                s_force_weather.store(true);
+                weather_service_request_refresh();
                 footer_set("正在更新天气", &buddy_font_16, kPhos);
             } else {
                 footer_set("请稍后再试", &buddy_font_16, kPhos);

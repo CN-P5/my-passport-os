@@ -18,6 +18,7 @@ prefix=r'''
 #include "launcher/app_registry.h"
 #include "launcher/battery_guard.h"
 static const char *kNvsNamespace="system_prefs";
+static const uint8_t kBrightness[]={10,20,40,60,80,100};static void ui_appearance_init(){}
 static uint8_t s_volume=80,s_brightness=80;
 static uint16_t s_timeout=60;
 static std::atomic<int64_t> s_outdoor_until_us{0};

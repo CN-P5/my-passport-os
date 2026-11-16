@@ -394,7 +394,8 @@ void settings_bootstrap(void) {
         nvs_close(handle);
     }
     if (s_volume > 100) s_volume = 80;
-    s_brightness = validated(kBrightness, s_brightness, static_cast<uint8_t>(80));
+    // 只在越界时回落到默认值：手改过的亮度(如 35)要保留，不能强制吸到档位上。
+    if (s_brightness < 10 || s_brightness > 100) s_brightness = 80;
     s_timeout = validated(kTimeouts, s_timeout, static_cast<uint16_t>(60));
     ui_appearance_init();
     ui_theme_set(s_theme);
@@ -421,9 +422,8 @@ void settings_set_volume(uint8_t percent) {
     if (result != ESP_OK) ESP_LOGW(kTag, "Failed to save volume: %s", esp_err_to_name(result));
 }
 
-namespace {
 // 供小智设备工具读取/落盘音量和亮度（rc.59 的 device_control 依赖这几个入口）。
-bool save_percent_persist(const char *key, uint8_t percent) {
+bool save_percent(const char *key, uint8_t percent) {
     nvs_handle_t handle;
     esp_err_t result = nvs_open(kNvsNamespace, NVS_READWRITE, &handle);
     if (result == ESP_OK) {
@@ -431,20 +431,19 @@ bool save_percent_persist(const char *key, uint8_t percent) {
         if (result == ESP_OK) result = nvs_commit(handle);
         nvs_close(handle);
     }
-    if (result != ESP_OK) ESP_LOGW(kTag, "Failed to save %s: %s", key, esp_err_to_name(result));
+    if (result != ESP_OK) ESP_LOGW("settings", "Failed to save %s: %s", key, esp_err_to_name(result));
     return result == ESP_OK;
 }
-}  // namespace
 uint8_t settings_get_volume(void) { return s_volume; }
 uint8_t settings_get_brightness(void) { return s_brightness; }
 bool settings_save_volume(uint8_t percent) {
-    if (percent > 100 || !save_percent_persist("volume", percent)) return false;
+    if (percent > 100 || !save_percent("volume", percent)) return false;
     s_volume = percent;
     bsp_audio_set_master_volume(percent);
     return true;
 }
 bool settings_save_brightness(uint8_t percent) {
-    if (percent < 10 || percent > 100 || !save_percent_persist("brightness", percent)) return false;
+    if (percent < 10 || percent > 100 || !save_percent("brightness", percent)) return false;
     s_brightness = percent;
     s_outdoor_until_us = 0;
     s_outdoor_restore = percent;

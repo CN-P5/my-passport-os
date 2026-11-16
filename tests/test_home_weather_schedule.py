@@ -5,9 +5,9 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'main/apps/home/app_home.cc').read_text()
+source = (root / 'main/apps/home/weather_service.cc').read_text()
 begin = source.index('struct WeatherSchedule {')
-end = source.index('WeatherSchedule s_weather_schedule;', begin)
+end = source.index('WeatherSchedule s_schedule;', begin)
 schedule = source[begin:end]
 constants = '\n'.join(re.findall(r'constexpr int64_t k(?:Weather(?:FirstDelay|Period|Retry)|AirPeriod)Ms = \d+;', source))
 code = r'''
