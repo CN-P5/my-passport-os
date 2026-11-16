@@ -95,8 +95,9 @@ constexpr int kMargin = 12;
 constexpr int kContentW = 240 - kMargin * 2;  // 216
 
 constexpr int64_t kWeatherFirstDelayMs = 15000;
-constexpr int64_t kWeatherPeriodMs = 1800000;
-// 失败(信号差/热点刚连上)后 2 分钟再试,而不是干等 30 分钟。
+constexpr int64_t kWeatherPeriodMs = 900000;   // 天气 15 分钟一次(上游 rc.59 口径)
+constexpr int64_t kAirPeriodMs = 1800000;      // 空气质量保持 30 分钟一次
+// 失败(信号差/热点刚连上)后 2 分钟再试,而不是干等一个周期。
 constexpr int64_t kWeatherRetryMs = 120000;
 // 超过 2 小时的天气在风级行改为显示"几小时前更新",户外断网时不把旧数据当实时。
 constexpr int64_t kWeatherStaleSec = 7200;
@@ -125,7 +126,8 @@ struct WeatherSchedule {
     }
 
     void finish(unsigned request, int64_t now, esp_err_t result) {
-        const int64_t next = now + (request == Weather && result != ESP_OK ? kWeatherRetryMs : kWeatherPeriodMs);
+        const int64_t next = now + (request == Air ? kAirPeriodMs
+                                    : result != ESP_OK ? kWeatherRetryMs : kWeatherPeriodMs);
         if (request == Weather) weather_due_ms = next;
         else air_due_ms = next;
     }
