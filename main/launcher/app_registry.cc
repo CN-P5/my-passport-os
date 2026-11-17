@@ -50,7 +50,8 @@ namespace {
 // 应用板块(Launcher 轮播)里展示的应用。
 // 首页(APP_ID_HOME)**不在这里** —— 它是底座而非一张卡,改由
 // app_registry_get_by_id() 单独寻址,这样 switch_to(APP_ID_HOME) 才不会找不到而黑屏。
-// AI设备(AI设备/Codex 陪伴精灵)已于 2026-09-12 移除,见 docs/app-review-2026-09-12.md。
+// 部分早期应用(如 AI 设备陪伴精灵、"你在狗叫什么"、"随身 Muse")已下架,
+// 其中后者保留 APP_ID 以免 NVS/RTC 里的旧值错位。
 const passport_app_t *s_apps[] = {
     &g_weather_app,
     &g_xiaozhi_app,

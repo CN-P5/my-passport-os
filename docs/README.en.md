@@ -1,142 +1,98 @@
+<div align="center">
+
+# My Passport OS
+
+**Third-party firmware for FoloToy AI Passport · ESP32-C3 · 8 MB Flash · 240×320**
+
+Built on top of [FoloToy AI Passport OS](https://github.com/manchunx7-bit/passport-os)
+UI and graphics inspired by the community firmware **1944 "Pocket Treasure Box"**
+
 [简体中文](../README.md) · **English**
 
-# Passport OS
+</div>
 
-**A small device worth keeping in your daily routine.**
+---
 
-Community firmware for the FoloToy AI Passport, based on ESP32-C3 with 8 MB Flash. It brings thirteen apps together with shared settings, Wi-Fi setup, themes, audio, battery reporting, and power management.
+## What this is
 
-**Ask Xiaozhi to adjust the volume, play music or radio, and set reminders on the device.**
+A personal fork of Passport OS for a small ESP32-C3 device (8 MB flash, no PSRAM, 240×320 ST7789 display).
 
-## Why this project exists
+Changes on top of upstream: light/dark appearance switching, a Weather app, redrawn home-screen artwork and portrait rendering, LAN-direct phone setup, coloured launcher icons, plus the upstream rc.59 voice-control work (Xiaozhi MCP device tools, double-click to talk, face animation) and its new apps.
 
-Thank you to everyone who has enjoyed the project and shared feedback. I started Passport OS to make a small device I would use regularly, then selected thirteen functions and apps through repeated experiments.
+> This is a personal branch. It does not aim to replace upstream and makes no stability promises — follow the upstream repository for the mainline.
 
-One part I especially enjoy is letting Xiaozhi connect these functions. While chatting, you can ask to hear music, save a task, or start a focus session, and Xiaozhi calls the device's functions to carry out the request.
+## Code source and licence
 
-People have suggested many personal improvements. Because everyone uses the hardware differently, sharing the source lets you add what you need, remove what you do not, and make a version that fits you. Have fun using and modifying it.
+This repository is a **derivative work** of [FoloToy AI Passport OS](https://github.com/manchunx7-bit/passport-os), released under the **MIT** licence.
 
-## Ask Xiaozhi to operate the device
-
-**Xiaozhi is the device's voice control entry point.** Double-press the OK button to enter a conversation, then use everyday language to adjust settings, open apps, play media, or manage tasks.
-
-| Example request | Device action |
+| | |
 | --- | --- |
-| “Turn the volume down” or “Set screen brightness to 50%” | Adjust and save the device's volume or brightness |
-| “Play my liked songs and stop in half an hour” | Open NetEase Music, play your favorites, and set a stop timer |
-| “Play traffic radio from Shenzhen” | Find a station by city and keywords, then open Radio to play it |
-| “Start a Pomodoro” or “How much time is left?” | Start a 25-minute focus session or read the actual remaining time; pause and resume are also supported |
-| “Remind me to drink water in ten minutes” or “Remind me to read every day at 9 pm” | Save a one-time or recurring reminder with an on-device alert and chime |
-| “Create a packing list: keys, phone, umbrella” or “Mark umbrella as done” | Save a checklist, then read and update its items and completion state |
-| “Open Stopwatch” or “Go to Home” | Open the requested app or screen |
+| Upstream | <https://github.com/manchunx7-bit/passport-os> |
+| Branch point | `b70879b` (`v0.1.0-8`) |
+| Upstream version merged | `5101891` — Passport OS 0.2.0-rc.59 |
+| Version here | `0.2.0-rc.59` |
+| Licence | MIT, original copyright notice kept in [`LICENSE`](../LICENSE) |
 
-You can also ask for today's AI news. Robot expressions and an audio waveform follow listening and speech, longer text expands into a reading area, and all four themes are supported.
+Upstream copyright belongs to **FoloToy** (`Copyright (c) 2026 FoloToy`) and its contributors. This fork keeps the original notice and is released under the same MIT terms; keep the `LICENSE` file intact when redistributing.
 
-Voice tools require a network connection and Xiaozhi configuration. NetEase playback also depends on your account and available tracks; radio depends on the online directory. Opening another app or starting media playback ends the current Xiaozhi conversation. Double-press OK again for further voice control. The device must remain powered on for reminders to trigger.
+## UI and graphics reference
 
-## Thirteen apps
+Layout, colour and icon language reference the community firmware **1944 "Pocket Treasure Box"**, another community build for the same hardware.
 
-| App | What it does | Requirements |
-| --- | --- | --- |
-| Home | Clock, profile, portraits, cards, weather, and air quality | Network for weather and air quality |
-| Radio | City and station selection, playback, and sleep timer | Wi-Fi and available online stations |
-| AI Voice | Hardware microphone and configurable desktop hotkeys | Windows companion program |
-| Xiaozhi AI | Voice conversations, volume and brightness control, app opening, music and radio requests, timers, reminders, and lists | Network and Xiaozhi configuration; media needs its corresponding service |
-| NetEase Music | Search songs, play playlists and daily recommendations | Wi-Fi, your own NetEase account, and available APIs |
-| Reminders | One-time and recurring reminders, chimes, and snooze | Works offline; uses the device clock |
-| Lists | View, check off, and manage tasks | Works offline |
-| Muse | Send voice messages and read replies on screen | Phone pairing, your own account, and a working network |
-| Why Barking | A sound-controlled game | Works offline |
-| Sound Jump | Longer sounds jump farther; release your voice to jump | Works offline |
-| Tetris | Stack blocks and clear lines | Works offline |
-| Stopwatch | Timing, splits, pause, and resume | Works offline |
-| Pomodoro | Focus sessions, breaks, and completion chimes | Works offline |
+- 1944 has **no public source code**; no code, font or binary asset from it is copied here.
+- The reference was taken from the device's own screens, and every drawing routine here was **written independently** (LVGL rectangles / pixel shapes / palettes).
+- Home-screen artwork, launcher icons and portrait presets are self-drawn in the same visual style:
+  - `tools/gen_band_art.py` — artwork generator and preview (16-colour I4)
+  - `tools/gen_launcher_icon_preview.py` — launcher icon preview
+- If the 1944 author has any concern, please open an issue and it will be adjusted immediately.
 
-## Latest firmware
+## What changed compared to upstream
 
-[Get the latest firmware](https://ai-passport.folotoy.cn/plays/438/?v=5579-4)
+- **Light / dark appearance**: light, dark, or follow sunrise/sunset; 4 themes × 2 appearances.
+- **Coloured launcher icons**, one palette per app, including the newly added apps.
+- **Six portrait presets**: dots, flat, flat + local dots, comic line art, silhouette, halftone print.
+- **Two home artwork scenes** (city night / mountain lake), packed as 16-colour I4, auto-dimmed in dark mode.
+- **Configurable brand text** on the home screen.
+- **Weather app** plus a **system-level refresh service**: weather every 15 min, air quality every 30 min, retry after 2 min on failure, city changes refresh immediately; it steps aside while audio apps are in the foreground. Home and the Weather app only read the cache, so both open instantly.
+- **Phone setup over LAN**: when the device is online the page shows the current SSID and IP, so the phone can open it from the same network instead of joining the setup hotspot.
+- **Upstream rc.59 merged in**: Xiaozhi MCP device control, double-click the OK button to talk, face animation, and the NetEase Music, Reminders, Text Lists and AI Hotspot apps.
+- **Removed**: two apps ("你在狗叫什么" and "随身 Muse"); their `APP_ID` values are kept so stored settings do not shift.
 
-## Related projects
+## Build
 
-- [Muse: ai-passport-muse](https://github.com/manchunx7-bit/ai-passport-muse): standalone module source and usage guide.
-- [AI Voice: folo-ai-passport-voice](https://github.com/manchunx7-bit/folo-ai-passport-voice): voice application source, Windows companion, and usage guide.
-
-## Install
-
-Using a prebuilt image does not require AI tools or a firmware development environment. Get it from the [latest firmware page](https://ai-passport.folotoy.cn/plays/438/?v=5579-4).
-
-Use only the matching FoloToy AI Passport hardware revision with ESP32-C3 and 8 MB Flash. Similar-looking boards may have incompatible displays, audio chips, buttons, or partition layouts.
-
-| Situation | Image | Address |
-| --- | --- | --- |
-| First installation or a fresh start | `*-full.bin` | `0x0` |
-| Existing Passport OS with a verified identical partition layout | `*-app.bin` | `0x10000` |
-
-**Back up first.** A full image overwrites configuration in its written range. A complete reset also requires erasing flash. To preserve settings and images, verify the partition layout and use the application image without erasing the whole flash.
-
-On first boot, connect your phone to the device's password-free `Passport-WiFi-xxxx` hotspot and open `http://192.168.4.1`. Follow the setup page to select Wi-Fi, city, and personal details. Xiaozhi and Muse need your own service configuration; AI Voice also needs its Windows companion.
-
-## Make your own version
-
-Download the source, modify the apps or interface, build a firmware image, and test it on matching hardware.
-
-| Area | Source |
-| --- | --- |
-| Application UI and logic | [`main/apps/`](../main/apps/) |
-| Launcher, settings, and app lifecycle | [`main/launcher/`](../main/launcher/) |
-| Xiaozhi device control and media handover | [`main/device_control_mcp.cc`](../main/device_control_mcp.cc), [`main/voice_intent.cc`](../main/voice_intent.cc) |
-| Shared UI and fonts | [`main/ui/`](../main/ui/), [`main/fonts/`](../main/fonts/) |
-| Board drivers | [`components/bsp/`](../components/bsp/) |
-| Wi-Fi setup | [`components/esp-wifi-connect/`](../components/esp-wifi-connect/) |
-| Muse integration | [`components/passport_muse/`](../components/passport_muse/) |
-| Tests and development tools | [`tests/`](../tests/), [`tools/`](../tools/) |
-
-### Build
-
-Install Git, ESP-IDF 5.5.3, and its toolchain. On Windows, you can build in WSL and flash through a Windows serial port.
+Requires **ESP-IDF 5.5.x** (verified on 5.5.3); LVGL 9.5 is pulled by the component manager.
 
 ```bash
-git clone https://github.com/manchunx7-bit/passport-os.git
-cd passport-os
-bash build.sh release
+idf.py set-target esp32c3
+idf.py build
+python tools/verify_firmware.py
 ```
 
-The script loads ESP-IDF from `/opt/esp-idf` by default. For another installation path:
+Host-side tests (no hardware needed):
 
 ```bash
-IDF_DIR="$HOME/esp/esp-idf" bash build.sh release
+bash tools/test-host.sh
 ```
 
-ESP-IDF Component Manager downloads the declared dependencies. The build verifies distribution defaults, including public mode and empty proxy defaults.
+## Flash
 
-- Full image: `build-public/FoloToy-AI-Passport-full.bin`, written at `0x0`.
-- Application image: `build-public/passport-os.bin`, written at `0x10000` only for a verified matching partition layout.
-
-### Verify
-
-With ESP-IDF 5.5.3 activated:
+Flashing only the app partition keeps NVS (settings, business card, Wi-Fi):
 
 ```bash
-bash tools/validate.sh --static
-bash tools/validate.sh --firmware
+python -m esptool --chip esp32c3 -p COM5 -b 460800 \
+  --before default_reset --after hard_reset \
+  write_flash --flash_mode dio --flash_size 8MB --flash_freq 80m \
+  0x10000 build/passport-os.bin
 ```
 
-The firmware validation command builds and verifies a full image at `build/FoloToy-AI-Passport-full.bin`. Build success does not replace physical testing of buttons, display, audio, networking, and the behavior you changed.
+More detail in [`docs/MAINTENANCE.md`](MAINTENANCE.md) and [`docs/remote-build.md`](remote-build.md).
 
-### Package
+## Licence
 
-After validating the corresponding firmware version:
+[MIT](../LICENSE). Original copyright FoloToy; modifications in this repository are released under the same licence.
 
-```bash
-python3 tools/package_firmware.py --date YYYY-MM-DD --verification /path/to/verification-public.json
-```
+## Credits
 
-Replace the date and verification path with actual values. Use public-safe verification records for the exact version. Packaging does not publish a GitHub Release. Source changes require a new build and verification; do not reuse stale validation records.
-
-## Privacy and licensing
-
-Public builds enable `PASSPORT_PUBLIC_RELEASE=ON` and clear proxy defaults. Users supply their own Wi-Fi, accounts, and service credentials. Do not commit credentials, device exports, private logs, or personal images.
-
-The main project uses the [MIT license](../LICENSE). Muse, Noise, and other third-party content retain their own licenses and notices. Jollybot artwork has [separate terms](../main/apps/muse/JOLLYBOT-NOTICE.md).
-
-Thanks to FoloToy, the upstream projects, and everyone who shares ideas, reports issues, and contributes improvements.
+- [FoloToy Passport OS](https://github.com/manchunx7-bit/passport-os) — upstream firmware and hardware
+- The 1944 "Pocket Treasure Box" author — visual reference
+- [LVGL](https://lvgl.io/), [ESP-IDF](https://github.com/espressif/esp-idf) and all upstream dependencies

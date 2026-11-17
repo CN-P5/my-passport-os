@@ -2,7 +2,7 @@
 
 ## 日常小改动
 
-从 `AGENTS.md` 与当前状态定位模块，修改源码，跑对应测试；交付前执行完整主机回归。只更新当前状态中的变化和验证结果，不重复维护多份历史说明。
+按应用目录定位模块，修改源码后跑对应测试；交付前执行完整主机回归。
 
 ## 环境和命令
 
@@ -25,7 +25,7 @@ idf.py -B build merge-bin -o FoloToy-AI-Passport-full.bin
 python3 tools/verify_firmware.py build
 ```
 
-`python3 tools/check_repo.py --firmware-fork` 做仓库检查；`bash tools/validate.sh --static` 还会运行 actionlint 和完整主机测试，首次缺工具时安装脚本需要联网。Git 关联与当前审阅分支以 `docs/CURRENT.md` 为准。
+`python3 tools/check_repo.py --firmware-fork` 做仓库检查；`bash tools/validate.sh --static` 还会运行 actionlint 和完整主机测试，首次缺工具时安装脚本需要联网。
 
 ## 设备更新
 
@@ -35,8 +35,7 @@ python3 tools/verify_firmware.py build
 
 ## 原目录与交接校验
 
-旧项目 `F:/WORK/AI硬件/passport-os` 是本次整理前的完整历史档案，保留旧文档、构建和发布包；旁边 `_diag` 保留实机证据和私密备份。日常只维护新目录。不要让 AI 同时加载两个项目。
 
 `firmware/snapshot-manifest.json` 保存复制文件 SHA256 与源 Git HEAD；该 HEAD 仅供追溯，快照包含未提交及新增文件。源码及生成资源按原字节复制，历史测试输出被排除。2026-11-08 已复制固定版本依赖缓存，并从新目录完成 rc.57 发布配置全量构建与校验。源码快照仍不包含可再生成的 build-public 和 managed_components。
 
-本次整理仅调整 `.gitignore` 和源码打包工具的文件清单：收录 AGENTS 与诊断默认配置；公开文档在后续远程基线整理中恢复，见 `docs/CURRENT.md`。运行源码、资源、测试及构建配置保持原字节。源码打包已做不生成发布包的 dry-run，确认精简文档会随下次打包保留。
+本次发布仅调整 `.gitignore` 与源码打包工具的文件清单，并收录诊断默认配置；运行源码、资源、测试及构建配置保持原字节。源码打包已做不生成发布包的 dry-run，确认精简文档会随下次打包保留。

@@ -2,7 +2,7 @@
 """在局域网 Linux 构建机上编译本仓库（Windows/Linux/macOS 都能直接跑，不用 WSL）。
 
 用法：
-    POS_HOST=192.168.10.204 POS_PW=*** python tools/build-remote.py
+    POS_HOST=192.168.1.10 POS_PW=*** python tools/build-remote.py
     POS_HOST=... POS_PW=... python tools/build-remote.py --fetch ../_work/build
     POS_HOST=... POS_PW=... python tools/build-remote.py --clean
 

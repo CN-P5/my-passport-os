@@ -10,19 +10,19 @@ Windows 侧没有 ESP-IDF 工具链，WSL 里编译虽然可行，但把构建�
 
 ```bash
 # 增量编译（保留远端的 managed_components 与 build/）
-POS_HOST=192.168.10.204 POS_PW=<密码> python tools/build-remote.py
+POS_HOST=192.168.1.10 POS_PW=<密码> python tools/build-remote.py
 
 # 全量重编
-POS_HOST=192.168.10.204 POS_PW=<密码> python tools/build-remote.py --clean
+POS_HOST=192.168.1.10 POS_PW=<密码> python tools/build-remote.py --clean
 
 # 顺便把 app 镜像与整包镜像取回到本地目录
-POS_HOST=192.168.10.204 POS_PW=<密码> python tools/build-remote.py --fetch ../_work/build
+POS_HOST=192.168.1.10 POS_PW=<密码> python tools/build-remote.py --fetch ../_work/build
 ```
 
 Windows PowerShell 写法：
 
 ```powershell
-$env:POS_HOST='192.168.10.204'; $env:POS_PW='<密码>'
+$env:POS_HOST='192.168.1.10'; $env:POS_PW='<密码>'
 python tools/build-remote.py --fetch ..\_work\build
 ```
 
