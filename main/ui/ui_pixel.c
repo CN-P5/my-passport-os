@@ -90,13 +90,16 @@ uint32_t ui_theme_color_on_dark(ui_color_role_t role)
 }
 // 人像配色方案（0=主题墨色）。2-bit 蒙版只有 4 个色调，所以"彩色"是四色海报化。
 static uint8_t s_portrait_scheme = 0;
-static const uint32_t kPortraitSchemes[4][4] = {
+static const uint32_t kPortraitSchemes[7][4] = {
     {0x000000, 0x000000, 0x000000, 0x000000}, /* 0 占位：走主题 */
     {0x1B2A4A, 0x35618F, 0xE0A02A, 0xF6E7C8}, /* 1 彩色海报 */
     {0x3A1F16, 0x8C4A2F, 0xE0A15C, 0xF7E3C0}, /* 2 暖色 */
     {0x16222E, 0x2F5C74, 0x86BFC9, 0xE8F4F4}, /* 3 冷色 */
+    {0x0B3D2E, 0x1FA97B, 0xF2C14E, 0xFFF1D6}, /* 4 森林黄昏：绿→金 */
+    {0x0E2A3A, 0x1D7A8C, 0xE0A02A, 0xF6E7C8}, /* 5 深海琥珀 */
+    {0x2B1B1B, 0xC1440E, 0xF2A03D, 0xF7E3B5}, /* 6 熔岩暖焰 */
 };
-void ui_pixel_set_portrait_scheme(uint8_t scheme) { s_portrait_scheme = scheme > 3 ? 0 : scheme; }
+void ui_pixel_set_portrait_scheme(uint8_t scheme) { s_portrait_scheme = scheme > 6 ? 0 : scheme; }
 uint8_t ui_pixel_portrait_scheme(void) { return s_portrait_scheme; }
 
 uint32_t ui_theme_portrait_color(uint8_t level)

@@ -13,11 +13,15 @@
 #define HOME_AVATAR_LEGACY_BYTES (96 * 150 / 8)
 #define HOME_PORTRAIT_I4_BYTES (64 + HOME_PORTRAIT_PIXELS / 2)
 
-/* PT35, preset (0=legacy, 1=dots, 2=flat, 3=hybrid), three reserved bytes.
- * Then MSB-first 2bpp tones and an independent MSB-first visibility mask. */
+/* PT35, preset (0=legacy, 1=dots, 2=flat, 3=hybrid, 4=comic, 5=silhouette,
+ * 6=halftone), three reserved bytes. Then MSB-first 2bpp tones and an
+ * independent MSB-first visibility mask.
+ * 4/5/6 由网页端 b663d41 引入；此前校验上限仍为 3，导致这三种风格上传被拒。
+ * 渲染端 home_portrait_index() 对非 0/1 一律 level+1，无需额外分支。 */
+#define HOME_PORTRAIT_PRESET_MAX 6
 static inline int home_portrait_valid_header(const uint8_t *data) {
     return data[0] == 'P' && data[1] == 'T' && data[2] == '3' && data[3] == '5' &&
-        data[4] <= 3 && !data[5] && !data[6] && !data[7];
+        data[4] <= HOME_PORTRAIT_PRESET_MAX && !data[5] && !data[6] && !data[7];
 }
 static inline void home_portrait_init_header(uint8_t *data, uint8_t preset) {
     data[0] = 'P'; data[1] = 'T'; data[2] = '3'; data[3] = '5';

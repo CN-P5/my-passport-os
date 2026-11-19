@@ -7,6 +7,7 @@
 #include "bsp_battery.h"
 #include "bsp_display.h"
 #include "ui_pixel.h"
+#include "ui/ui_appearance.h"
 #include "ui/pixel_scene.h"
 #include "app_fonts.h"
 #include "esp_log.h"
@@ -41,15 +42,37 @@ lv_obj_t *s_wifi_bars[3];
 ui_pixel_battery_t s_battery;
 size_t s_selected_index;
 
+// 卡片描边配色：由当前应用主色按亮/暗模式派生，随 update_card_content 刷新。
+struct CardInk {
+    uint32_t border;   // 主色描边
+    uint32_t pale;     // 极淡同色底
+    uint32_t title;    // 标题（亮底压暗一档，暗底用亮主色）
+};
+CardInk s_card_ink{0x8FA99A, 0xF7FBF8, 0x1B7F52};
+
+// 把 src 按权重混合进 dst（RGB888 逐通道线性插值，weight 0..100）。
+uint32_t mix_rgb(uint32_t dst, uint32_t src, int weight) {
+    if (weight < 0) weight = 0;
+    if (weight > 100) weight = 100;
+    int inv = 100 - weight;
+    uint32_t r = (((dst >> 16) & 0xFF) * inv + ((src >> 16) & 0xFF) * weight) / 100;
+    uint32_t g = (((dst >> 8) & 0xFF) * inv + ((src >> 8) & 0xFF) * weight) / 100;
+    uint32_t b = ((dst & 0xFF) * inv + (src & 0xFF) * weight) / 100;
+    return (r << 16) | (g << 8) | b;
+}
+
 void draw_catalogue_stage(lv_event_t *event) {
     pixel_scene::Ink ink(event);
     // A single ticket: notched corners and one accent tab. The page number in
     // the corner is the only position cue, so no brackets or pager dots.
-    ink.box(0, 0, 216, 146, UI_SURFACE);
+    // 卡片底改成当前应用主色的极淡同色版，并沿票券外缘描一圈主色边框。
+    // 四角缺口(7x7，略大于描边内缩)用屏底色挖掉，边框在四角自然断开，保持票券语言。
+    ink.box(0, 0, 216, 146, s_card_ink.pale);
+    ink.frame(1, 1, 214, 144, s_card_ink.border, 1);
     for (int x : {0, 210}) {
-        ink.box(x, 0, 6, 6, UI_BG); ink.box(x, 140, 6, 6, UI_BG);
+        ink.box(x, 0, 7, 7, UI_BG); ink.box(x, 139, 7, 7, UI_BG);
     }
-    ink.box(14, 12, 14, 2, UI_ACCENT);
+    ink.box(14, 12, 14, 2, s_card_ink.border);
 }
 
 // Up/down neighbours read as a wheel: a 7x4 pixel chevron before the name.
@@ -332,17 +355,18 @@ void update_card_content() {
     lv_label_set_text(s_app_title, app_chinese_name(app->id));
     lv_label_set_text_fmt(s_page_number, "%02u / %02u", (unsigned)s_selected_index + 1,
                           (unsigned)app_registry_get_count());
-    uint32_t color = kPhos;
-    if (ui_theme_is_multicolor()) {
-        switch (app->id) {
-            case APP_ID_RADIO: case APP_ID_POMODORO: color = UI_TERTIARY; break;
-            case APP_ID_VOICE: case APP_ID_TETRIS: color = UI_SECONDARY; break;
-            case APP_ID_XIAOZHI: case APP_ID_STOPWATCH: color = UI_SUCCESS; break;
-            default: break;
-        }
-        ui_pixel_text_color(s_app_title, color);
-    }
-    draw_app_icon(app->id, color);
+    // 卡片描边/淡底/标题统一由应用主色派生；主题只决定底与字的中性色，
+    // 因此亮/暗切换后 draw_catalogue_stage 会用新派生的色重绘。
+    const uint32_t primary = icon_palette_for(app->id).primary;
+    const bool dark = ui_appearance_is_dark();
+    s_card_ink.pale   = mix_rgb(UI_SURFACE, primary, dark ? 16 : 10);
+    // 亮色下浅主色(绿/橙/黄)在近白淡底上对比不足，需压暗 35%/42% 才过 3:1；
+    // 暗色下主色本身就亮，直接用并给标题微提亮。
+    s_card_ink.border = dark ? primary : mix_rgb(primary, 0x000000, 35);
+    s_card_ink.title  = dark ? mix_rgb(primary, 0xFFFFFF, 6)
+                             : mix_rgb(primary, 0x000000, 42);
+    ui_pixel_text_color(s_app_title, s_card_ink.title);
+    draw_app_icon(app->id, s_card_ink.title);
     lv_obj_invalidate(s_card);
 
     const size_t count = app_registry_get_count();
@@ -350,6 +374,9 @@ void update_card_content() {
     const auto *next = app_registry_get_by_index((s_selected_index + 1) % count);
     ui_pixel_label_set_text(s_previous, previous ? app_chinese_name(previous->id) : "");
     ui_pixel_label_set_text(s_next, next ? app_chinese_name(next->id) : "");
+    // 上下邻居带一点各自主色，但大幅降饱和，不与当前卡片的实色标题抢视线。
+    if (previous) ui_pixel_text_color(s_previous, mix_rgb(UI_TEXT_DIM, icon_palette_for(previous->id).primary, 45));
+    if (next)     ui_pixel_text_color(s_next,     mix_rgb(UI_TEXT_DIM, icon_palette_for(next->id).primary, 45));
 }
 
 // Selection follows physical UP/DOWN: only the icon settles, text stays readable.

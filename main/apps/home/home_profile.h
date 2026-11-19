@@ -31,7 +31,7 @@ typedef struct {
     char name[HOME_NAME_MAX];
     char brand[HOME_BRAND_MAX]; /* 首页顶栏文字,空串=不显示 */
     uint8_t scene;              /* 首页底部场景:0=自动轮换,1=海边,2=城镇,3=山峰,4=天空,5=沙漠 */
-    uint8_t portrait_scheme;    /* 人像配色:0=主题墨色,1=彩色海报,2=暖色,3=冷色 */
+    uint8_t portrait_scheme;    /* 人像配色:0=主题墨色,1=彩色海报,2=暖色,3=冷色,4=森林黄昏,5=深海琥珀,6=熔岩暖焰 */
     char signature[HOME_SIGNATURE_MAX];
     char city[HOME_CITY_MAX];
     char address[HOME_ADDRESS_MAX];

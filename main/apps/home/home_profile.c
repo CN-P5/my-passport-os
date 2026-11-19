@@ -92,7 +92,7 @@ void home_profile_init(void) {
     uint8_t scene = 0;
     if (nvs_get_u8(handle, "scene", &scene) == ESP_OK && scene <= 5) s_profile.scene = scene;
     uint8_t scheme = 0;
-    if (nvs_get_u8(handle, "pscheme", &scheme) == ESP_OK && scheme <= 3) s_profile.portrait_scheme = scheme;
+    if (nvs_get_u8(handle, "pscheme", &scheme) == ESP_OK && scheme <= 6) s_profile.portrait_scheme = scheme;
     len = sizeof(s_profile.signature);
     nvs_get_str(handle, "signature", s_profile.signature, &len);
     len = sizeof(s_profile.city);
@@ -130,7 +130,7 @@ uint32_t home_profile_version(void) {
 
 esp_err_t home_profile_set_text(const home_profile_t *in) {
     if (!in) return ESP_ERR_INVALID_ARG;
-    if (in->scene > 5 || in->portrait_scheme > 3) return ESP_ERR_INVALID_ARG;
+    if (in->scene > 5 || in->portrait_scheme > 6) return ESP_ERR_INVALID_ARG;
     if (!utf8_len_ok(in->name, HOME_NAME_MAX) ||
         !utf8_len_ok(in->brand, HOME_BRAND_MAX) ||
         !utf8_len_ok(in->signature, HOME_SIGNATURE_MAX) ||
