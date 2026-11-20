@@ -63,15 +63,11 @@ uint32_t mix_rgb(uint32_t dst, uint32_t src, int weight) {
 
 void draw_catalogue_stage(lv_event_t *event) {
     pixel_scene::Ink ink(event);
-    // A single ticket: notched corners and one accent tab. The page number in
-    // the corner is the only position cue, so no brackets or pager dots.
-    // 卡片底改成当前应用主色的极淡同色版，并沿票券外缘描一圈主色边框。
-    // 四角缺口(7x7，略大于描边内缩)用屏底色挖掉，边框在四角自然断开，保持票券语言。
+    // 方角卡片：极淡同色底 + 一圈完整的主色描边，页码是唯一的位置提示。
+    // 旧版在四角挖 7x7 缺口做票券造型，实机发现缺口会把描边四角一起盖掉；
+    // 改为完整矩形描边，不再挖角，四角边框闭合。
     ink.box(0, 0, 216, 146, s_card_ink.pale);
     ink.frame(1, 1, 214, 144, s_card_ink.border, 1);
-    for (int x : {0, 210}) {
-        ink.box(x, 0, 7, 7, UI_BG); ink.box(x, 139, 7, 7, UI_BG);
-    }
     ink.box(14, 12, 14, 2, s_card_ink.border);
 }
 
