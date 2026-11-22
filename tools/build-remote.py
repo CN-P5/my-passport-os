@@ -1,15 +1,18 @@
 #!/usr/bin/env python
 """在局域网 Linux 构建机上编译本仓库（Windows/Linux/macOS 都能直接跑，不用 WSL）。
 
-用法：
-    POS_HOST=192.168.1.10 POS_PW=*** python tools/build-remote.py
-    POS_HOST=... POS_PW=... python tools/build-remote.py --fetch ../_work/build
-    POS_HOST=... POS_PW=... python tools/build-remote.py --clean
+用法（默认走密钥免密，见 ~/.ssh/config 的 pos-build 别名）：
+    python tools/build-remote.py                      # 增量编译
+    python tools/build-remote.py --fetch ../_work/build
+    python tools/build-remote.py --clean
+    POS_HOST=192.168.10.204 POS_KEY=~/.ssh/id_pos_build python tools/build-remote.py
 
 环境变量：
-    POS_HOST    构建机地址（必填）
-    POS_PW      登录密码（必填，经 paramiko 传递，不写进仓库）
-    POS_USER    登录用户，默认 root
+    POS_HOST    构建机地址或 ssh config 别名，默认 pos-build
+    POS_KEY     私钥路径；不设则用 ssh config 里该别名指定的私钥
+    POS_PW      登录密码（可选，仅在没有可用密钥时使用）
+    POS_USER    登录用户，默认取 ssh config，其次 root
+    POS_PORT    SSH 端口，默认取 ssh config，其次 22
     REMOTE_IDF  构建机上的 ESP-IDF 路径，默认 /root/esp-idf
     REMOTE_DIR  构建机上的仓库目录，默认 /root/pos
 
@@ -55,10 +58,37 @@ def _filter(info: tarfile.TarInfo):
     return info
 
 
-def connect(host: str, user: str, password: str) -> paramiko.SSHClient:
+def ssh_config(alias: str):
+    """读 ~/.ssh/config，返回 (hostname, user, identityfile, port)；域名不存在返回 None。
+
+    paramiko 不会解析 ssh config 的 Host 别名，所以这里手工查一次，
+    这样 POS_HOST 既能写 IP，也能直接写 `pos-build` 这种别名。
+    """
+    path = os.path.expanduser('~/.ssh/config')
+    if not os.path.isfile(path):
+        return None
+    config = paramiko.SSHConfig()
+    try:
+        with open(path, encoding='utf-8') as handle:
+            config.parse(handle)
+    except OSError:
+        return None
+    entry = config.lookup(alias)
+    # 未知别名时 lookup 只会回一个 hostname=alias，据此判断命中。
+    if not entry or set(entry) <= {'hostname'}:
+        return None
+    identity = entry.get('identityfile') or []
+    key = os.path.expanduser(identity[0]) if identity else None
+    return entry.get('hostname') or alias, entry.get('user'), key, entry.get('port')
+
+
+def connect(host: str, user: str, password=None, key=None, port: int = 22) -> paramiko.SSHClient:
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(hostname=host, username=user, password=password, timeout=20, banner_timeout=30)
+    client.connect(hostname=host, port=port, username=user,
+                   password=password or None, key_filename=key,
+                   look_for_keys=True, allow_agent=True,
+                   timeout=20, banner_timeout=30)
     return client
 
 
@@ -88,17 +118,30 @@ def main() -> int:
     parser.add_argument('--clean', action='store_true', help='丢弃远端 build/ 后全量重编')
     args = parser.parse_args()
 
-    host = os.environ.get('POS_HOST')
-    password = os.environ.get('POS_PW')
-    if not host or not password:
-        sys.exit('请设置 POS_HOST 与 POS_PW 环境变量')
-    user = os.environ.get('POS_USER', 'root')
+    # 认证：优先 ~/.ssh/config 里的别名（含密钥），也可以用 POS_KEY 指定私钥；
+    # 两者都没有时才回退到 POS_PW 密码。paramiko 自己不读 ssh config，这里手工解析。
+    alias = os.environ.get('POS_HOST', 'pos-build')
+    password = os.environ.get('POS_PW') or None
+    key = os.environ.get('POS_KEY') or None
+    if key:
+        key = os.path.expanduser(key)
+
+    looked_up = ssh_config(alias)
+    host, cfg_user, cfg_key, cfg_port = looked_up if looked_up else (alias, None, None, None)
+    user = os.environ.get('POS_USER') or cfg_user or 'root'
+    key = key or cfg_key
+    port = int(os.environ.get('POS_PORT') or cfg_port or 22)
+
     remote_idf = os.environ.get('REMOTE_IDF', '/root/esp-idf')
     remote_dir = os.environ.get('REMOTE_DIR', '/root/pos')
 
     started = time.time()
-    print(f'==> 连接 {user}@{host}')
-    client = connect(host, user, password)
+    auth = f'密钥 {key}' if key else ('密码' if password else '默认密钥/agent')
+    print(f'==> 连接 {user}@{host}:{port}（{auth}）')
+    try:
+        client = connect(host, user, password, key, port)
+    except paramiko.AuthenticationException:
+        sys.exit('认证失败：密钥没装上或密码不对。可设置 POS_KEY=<私钥路径> 或 POS_PW=<密码>。')
     try:
         archive = pack_source()
         size = len(archive.getvalue())

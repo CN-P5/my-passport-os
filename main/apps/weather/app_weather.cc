@@ -284,8 +284,9 @@ void build_ui()
 
     for (int i = 0; i < 3; ++i) {
         s_metrics[i] = ui_pixel_label(s_screen, "--", &buddy_font_16, UI_TEXT_DIM);
-        lv_obj_set_pos(s_metrics[i], 12 + i * 72, 106);
-        lv_obj_set_width(s_metrics[i], 72);
+        // 第三格(PM2.5)左移两个字符宽度，并放宽以容纳 "PM2.5 123"
+        lv_obj_set_pos(s_metrics[i], i == 2 ? 140 : 12 + i * 72, 106);
+        lv_obj_set_width(s_metrics[i], i == 2 ? 88 : 72);
         lv_label_set_long_mode(s_metrics[i], LV_LABEL_LONG_MODE_DOTS);
     }
 
@@ -296,11 +297,15 @@ void build_ui()
 
     for (int i = 0; i < kHourColumns; ++i) {
         const int x = 12 + i * 44;
+        // 第一行：天气图标 + 温度（温度从第二行提上来）
         s_hour_icon[i] = icon_cell(s_screen, x, 150, 18, 14);
+        s_hour_temp[i] = ui_pixel_label(s_screen, "--°", &lv_font_montserrat_14, UI_TEXT_DIM);
+        lv_obj_set_pos(s_hour_temp[i], x + 20, 150);
+        // 第二行：只留时间的小时，在本列内居中
         s_hour_hour[i] = ui_pixel_label(s_screen, "--", &lv_font_montserrat_14, UI_TEXT);
         lv_obj_set_pos(s_hour_hour[i], x, 164);
-        s_hour_temp[i] = ui_pixel_label(s_screen, "--°", &lv_font_montserrat_14, UI_TEXT_DIM);
-        lv_obj_set_pos(s_hour_temp[i], x + 20, 164);
+        lv_obj_set_width(s_hour_hour[i], 40);
+        lv_obj_set_style_text_align(s_hour_hour[i], LV_TEXT_ALIGN_CENTER, 0);
     }
 
     ui_pixel_panel_create(s_screen, 12, 182, 216, 1, UI_BORDER);
@@ -314,10 +319,11 @@ void build_ui()
         s_day_name[i] = ui_pixel_label(s_screen, kDayNames[i], &buddy_font_16, UI_TEXT_DIM);
         lv_obj_set_pos(s_day_name[i], 12, y);
         lv_obj_set_width(s_day_name[i], 34);
-        s_day_icon[i] = icon_cell(s_screen, 50, y + 3, 18, 14);
+        s_day_icon[i] = icon_cell(s_screen, 82, y + 3, 18, 14);   // 右移 4 个字符(32px)
         s_day_cond[i] = ui_pixel_label(s_screen, "--", &buddy_font_16, UI_TEXT);
-        lv_obj_set_pos(s_day_cond[i], 74, y);
-        lv_obj_set_width(s_day_cond[i], 76);
+        lv_obj_set_pos(s_day_cond[i], 106, y);
+        // 让出温度列：3 个汉字的天气名(强阵雨/毛毛雨)仍可完整显示
+        lv_obj_set_width(s_day_cond[i], 48);
         lv_label_set_long_mode(s_day_cond[i], LV_LABEL_LONG_MODE_DOTS);
         s_day_temp[i] = ui_pixel_label(s_screen, "--°/--°", &lv_font_montserrat_14, UI_TEXT);
         lv_obj_set_pos(s_day_temp[i], 152, y + 2);
@@ -456,6 +462,9 @@ static void weather_start(void)
     if (!s_timer) s_timer = lv_timer_create(tick, 500, nullptr);
     sync_refresh_footer();
     bsp_lvgl_unlock();
+    // 离开首页时 home 应用会把天气请求标记为取消，这里必须重新放开，
+    // 否则本页所有刷新(含按 OK 手动刷新)都会在发 HTTP 前直接失败。
+    home_weather_allow_requests();
     request_refresh();
 }
 

@@ -6,27 +6,38 @@ Windows 侧没有 ESP-IDF 工具链，WSL 里编译虽然可行，但把构建�
 
 ## 日常用法
 
-脚本用 paramiko 走 SSH/SFTP，**Windows / Linux / macOS 都能直接跑，不需要 WSL，也不需要 sshpass**：
+脚本用 paramiko 走 SSH/SFTP，**Windows / Linux / macOS 都能直接跑，不需要 WSL，也不需要 sshpass**。
+认证默认走**密钥免密**：读 `~/.ssh/config` 里 `pos-build` 别名指定的私钥（本机是 `~/.ssh/id_pos_build`），
+所以 `POS_HOST` 可以直接写别名，也可以写成 IP。
 
 ```bash
 # 增量编译（保留远端的 managed_components 与 build/）
-POS_HOST=192.168.1.10 POS_PW=<密码> python tools/build-remote.py
+python tools/build-remote.py
 
 # 全量重编
-POS_HOST=192.168.1.10 POS_PW=<密码> python tools/build-remote.py --clean
+python tools/build-remote.py --clean
 
 # 顺便把 app 镜像与整包镜像取回到本地目录
-POS_HOST=192.168.1.10 POS_PW=<密码> python tools/build-remote.py --fetch ../_work/build
+python tools/build-remote.py --fetch ../_work/build
 ```
 
 Windows PowerShell 写法：
 
 ```powershell
-$env:POS_HOST='192.168.1.10'; $env:POS_PW='<密码>'
 python tools/build-remote.py --fetch ..\_work\build
 ```
 
-密码只通过环境变量传递，不写进仓库。WSL 只需要在有需要时跑宿主测试（`tools/test-host.sh` 依赖 cc/bash）。
+认证相关环境变量：
+
+| 变量 | 含义 |
+|---|---|
+| `POS_HOST` | 地址或 ssh config 别名，默认 `pos-build` |
+| `POS_KEY` | 私钥路径；不设则用 ssh config 里该别名指定的私钥 |
+| `POS_PW` | 密码（可选，仅在没有可用密钥时回退） |
+| `POS_USER` / `POS_PORT` | 登录用户 / 端口，默认取 ssh config，其次 `root` / `22` |
+
+私钥和密码都只从环境变量或 ssh config 读取，不写进仓库。
+WSL 只需要在有需要时跑宿主测试（`tools/test-host.sh` 依赖 cc/bash）。
 
 ## 一次性准备
 

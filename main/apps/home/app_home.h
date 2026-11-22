@@ -8,7 +8,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+extern const passport_app_t g_home_app;
+// 亮暗主题翻转后整屏重建首页(create_ui 里颜色是创建期求值的，只 invalidate 会花屏)。
+void home_ui_rebuild(void);
 extern const passport_app_t g_home_app;
 
 #ifdef __cplusplus

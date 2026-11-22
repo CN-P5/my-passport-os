@@ -252,11 +252,6 @@ lv_obj_t *px_block(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color)
 
 lv_obj_t *wicon_block(int x, int y, int w, int h, uint32_t color) {
     if (s_wicon_n >= kWiMax || !s_wicon_zone) return nullptr;
-    // 磷光单色:原配色里的"亮色/墨"映射为亮绿,灰蓝系映射为暗绿(单色图标仍有层次)
-    color = (color == UI_INK || color == UI_YELLOW || color == UI_ORANGE ||
-             color == 0xFFFFFF)
-                ? kPhos
-                : kPhosDim;
     lv_obj_t *o = px_block(s_wicon_zone, x, y, w, h, color);
     s_wicon_objs[s_wicon_n++] = o;
     return o;
@@ -278,37 +273,46 @@ void wicon_clear(void) {
     s_wicon_spinning = false;
 }
 
-// 亮色底上白色云/浅灰云几乎不可见，按亮暗模式换一组对照色。
-#define WICON_WHITE (ui_appearance_is_dark() ? 0xF4F8FB : 0x8FA3B5)
-#define WICON_LIGHT (ui_appearance_is_dark() ? 0xB9C4CC : 0x74889B)
-#define WICON_MID (ui_appearance_is_dark() ? 0xC6CED4 : 0x6C8093)
-#define WICON_RAIN (ui_appearance_is_dark() ? 0x9AA7B4 : 0x5A7085)
-#define WICON_SNOW (ui_appearance_is_dark() ? 0xD7DEE4 : 0x93A7B8)
-#define WICON_STORM (ui_appearance_is_dark() ? 0x8B98A5 : 0x4F6577)
+// 天气图形配色：与天气应用 (main/apps/weather/app_weather.cc) 完全一致。
+// 固定色值，亮暗两种底色下都能看清，不再按外观压成单色。
+constexpr uint32_t kWxSun = 0xF7C948;       // 晴 / 日芯
+constexpr uint32_t kWxCloud = 0x7E97AC;     // 云
+constexpr uint32_t kWxCloudDeep = 0x5A7387; // 墨影 / 雷暴底
+constexpr uint32_t kWxRain = 0x3B72B8;      // 雨滴
+constexpr uint32_t kWxSnow = 0x8FB6D8;      // 雪花
+constexpr uint32_t kWxBolt = 0xE08B1E;      // 闪电
+constexpr uint32_t kWxFog = 0x8A97A3;       // 雾线
+
+#define WICON_WHITE kWxCloud
+#define WICON_LIGHT kWxCloud
+#define WICON_MID kWxCloudDeep
+#define WICON_RAIN kWxCloud
+#define WICON_SNOW kWxCloud
+#define WICON_STORM kWxCloudDeep
 
 // 三段云 + 墨影,可复用在阴/雨/雪/雷/雾图标里
 void wicon_cloud(int x, int y, uint32_t body) {
     wicon_block(x, y + 6, 18, 5, body);
     wicon_block(x + 3, y + 3, 9, 5, body);
     wicon_block(x + 9, y, 8, 5, body);
-    wicon_block(x + 1, y + 11, 16, 2, UI_INK);
+    wicon_block(x + 1, y + 11, 16, 2, kWxCloudDeep);
 }
 
 void wicon_sun(void) {
-    wicon_block(7, 4, 8, 8, UI_YELLOW);   // 日芯
-    wicon_block(10, 0, 3, 3, UI_ORANGE);  // 四向射线
-    wicon_block(10, 13, 3, 3, UI_ORANGE);
-    wicon_block(2, 7, 3, 3, UI_ORANGE);
-    wicon_block(17, 7, 3, 3, UI_ORANGE);
-    wicon_block(3, 1, 2, 2, UI_YELLOW);   // 斜向光点
-    wicon_block(18, 1, 2, 2, UI_YELLOW);
-    wicon_block(3, 13, 2, 2, UI_YELLOW);
-    wicon_block(18, 13, 2, 2, UI_YELLOW);
+    wicon_block(7, 4, 8, 8, kWxSun);    // 日芯
+    wicon_block(10, 0, 3, 3, kWxSun);   // 四向射线（与天气应用同色）
+    wicon_block(10, 13, 3, 3, kWxSun);
+    wicon_block(2, 7, 3, 3, kWxSun);
+    wicon_block(17, 7, 3, 3, kWxSun);
+    wicon_block(3, 1, 2, 2, kWxSun);    // 斜向光点
+    wicon_block(18, 1, 2, 2, kWxSun);
+    wicon_block(3, 13, 2, 2, kWxSun);
+    wicon_block(18, 13, 2, 2, kWxSun);
 }
 
 void wicon_sun_cloud(void) {
-    wicon_block(13, 0, 7, 7, UI_YELLOW);  // 右上太阳(下半被云压住)
-    wicon_block(20, 2, 2, 2, UI_YELLOW);
+    wicon_block(13, 0, 7, 7, kWxSun);   // 右上太阳(下半被云压住)
+    wicon_block(20, 2, 2, 2, kWxSun);
     wicon_cloud(0, 4, WICON_WHITE);
 }
 
@@ -319,27 +323,27 @@ void weather_icon_draw(uint16_t code) {
     if (code == 3) { wicon_cloud(2, 1, WICON_LIGHT); return; }              // 阴
     if (code == 45 || code == 48) {                                       // 雾
         wicon_cloud(2, 0, WICON_MID);
-        wicon_block(4, 14, 14, 2, UI_SUB);
+        wicon_block(4, 14, 14, 2, kWxFog);
         return;
     }
     if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {       // 雨
         wicon_cloud(2, 0, WICON_RAIN);
-        wicon_block(4, 14, 2, 3, UI_SKY_DARK);
-        wicon_block(9, 14, 2, 3, UI_SKY_DARK);
-        wicon_block(14, 14, 2, 3, UI_SKY_DARK);
+        wicon_block(4, 14, 2, 3, kWxRain);
+        wicon_block(9, 14, 2, 3, kWxRain);
+        wicon_block(14, 14, 2, 3, kWxRain);
         return;
     }
     if ((code >= 71 && code <= 77) || code == 85 || code == 86) {         // 雪
         wicon_cloud(2, 0, WICON_SNOW);
-        wicon_block(4, 14, 2, 2, 0x8FC7EF);
-        wicon_block(9, 14, 2, 2, 0x8FC7EF);
-        wicon_block(14, 14, 2, 2, 0x8FC7EF);
+        wicon_block(4, 14, 2, 2, kWxSnow);
+        wicon_block(9, 14, 2, 2, kWxSnow);
+        wicon_block(14, 14, 2, 2, kWxSnow);
         return;
     }
     if (code >= 95) {                                                     // 雷
         wicon_cloud(2, 0, WICON_STORM);
-        wicon_block(9, 13, 3, 2, UI_YELLOW);
-        wicon_block(8, 15, 2, 2, UI_YELLOW);
+        wicon_block(9, 13, 3, 2, kWxBolt);
+        wicon_block(8, 15, 2, 2, kWxBolt);
         return;
     }
     wicon_cloud(2, 1, WICON_LIGHT);
@@ -764,15 +768,15 @@ void create_ui() {
     // 行 1: 天气图标 + 大温度 + 天气状态
     s_wicon_zone = px_container(s_screen, 115, 137, 22, 18);
     s_lbl_temp = make_label(s_screen, &lv_font_montserrat_20, kTemperature, LV_TEXT_ALIGN_LEFT);
-    lv_obj_set_pos(s_lbl_temp, 138, 133);
-    lv_obj_set_size(s_lbl_temp, 42, 24);
+    lv_obj_set_pos(s_lbl_temp, 142, 133);
+    lv_obj_set_size(s_lbl_temp, 41, 24);
     lv_label_set_long_mode(s_lbl_temp, LV_LABEL_LONG_MODE_CLIP);
 
     s_lbl_wtext = make_label(s_screen, &buddy_font_16, kWeatherAccent, LV_TEXT_ALIGN_LEFT);
     // Three full-width Chinese glyphs need 48px even without tracking.
     // Bound the height as well: DOTS on a content-height label can still wrap.
-    lv_obj_set_pos(s_lbl_wtext, 182, 136);
-    lv_obj_set_size(s_lbl_wtext, 52, 20);
+    lv_obj_set_pos(s_lbl_wtext, 185, 136);
+    lv_obj_set_size(s_lbl_wtext, 49, 20);
     lv_obj_set_style_text_letter_space(s_lbl_wtext, 0, 0);
     lv_label_set_long_mode(s_lbl_wtext, LV_LABEL_LONG_MODE_DOTS);
 
@@ -1335,6 +1339,75 @@ void home_on_key(uint8_t btn, app_btn_event_t event, uint16_t mv) {
 }
 
 }  // namespace
+
+// 亮暗主题翻转后整屏重建。create_ui() 里的颜色都在创建时求值(烘焙进 LVGL style)，
+// 只对已有对象 invalidate 不会换色：绘制回调(时钟点阵/passport 细节/天气图标)按新
+// 调色板重画、其余元素仍留旧色，于是出现"局部变色"的花屏。这里把整个屏拆了重来一次。
+// 必须定义在匿名命名空间之外，否则只有内部链接，main.cc 链接不到。
+extern "C" void home_ui_rebuild(void) {
+    if (!s_home_active.load() || !s_ui_alive.load() || s_screen == nullptr) return;
+    if (s_share_visible) return;  // 分享视图单独渲染，留给下次进入时换色
+
+    ESP_LOGI(kTag, "Rebuilding home UI for appearance change");
+
+    // 与 home_start 一致：SPIFFS 读盘放在持锁之前。
+    home_profile_t prof;
+    home_profile_get(&prof);
+    const esp_err_t avatar_err = read_portrait(home_profile_has_avatar());
+
+    if (!bsp_lvgl_lock(pdMS_TO_TICKS(1000))) {
+        ESP_LOGW(kTag, "UI rebuild skipped: LVGL lock timeout");
+        return;
+    }
+    // 关掉 UI 开关:窗口期内 home_task 不会再写标签。
+    s_ui_alive.store(false);
+
+    lv_obj_delete(s_screen);
+    s_screen = nullptr;
+    s_avatar_img = nullptr;
+    s_portrait_ph = nullptr;
+    s_lbl_date = nullptr;
+    s_lbl_week = nullptr;
+    s_band_img = nullptr;
+    s_band_scrim = nullptr;
+    for (lv_obj_t *&bar : s_wifi_bars) bar = nullptr;
+    s_batt = {nullptr, nullptr};
+    for (lv_obj_t *&slot : s_clk_slots) slot = nullptr;
+    for (lv_obj_t *&dot : s_clk_colon) dot = nullptr;
+    std::memset(s_clk_slot_char, 0, sizeof(s_clk_slot_char));
+    s_lbl_name = nullptr;
+    s_lbl_sig = nullptr;
+    s_lbl_brand = nullptr;
+    s_wicon_zone = nullptr;
+    for (lv_obj_t *&o : s_wicon_objs) o = nullptr;
+    s_wicon_n = 0;
+    for (lv_obj_t *&b : s_spin) b = nullptr;
+    s_wicon_spinning = false;
+    s_lbl_city = nullptr;
+    s_lbl_wtext = nullptr;
+    s_lbl_temp = nullptr;
+    s_lbl_humidity = nullptr;
+    s_lbl_wind = nullptr;
+    s_lbl_feels = nullptr;
+    s_lbl_stat = nullptr;
+    s_lbl_footer = nullptr;
+
+    create_ui();
+    apply_profile(&prof);
+    apply_avatar(avatar_err == ESP_OK);
+    update_clock_labels();
+    update_battery_label();
+    update_weather_labels(&prof);
+    update_wind_line();
+    update_footer_label();
+    lv_scr_load(s_screen);
+
+    s_ui_alive.store(true);
+    bsp_lvgl_unlock();
+    ESP_LOGI(kTag, "Home UI rebuilt; free heap: %u KB",
+             (unsigned)(esp_get_free_heap_size() / 1024));
+}
+
 
 const passport_app_t g_home_app = {
     .id = APP_ID_HOME,

@@ -518,8 +518,13 @@ static esp_err_t air_parse(const char *body, const char *lat, const char *lon) {
 
 esp_err_t home_air_quality_refresh(const char *lat, const char *lon) {
     if (!home_profile_coordinates_valid(lat, lon) || !lat[0] || !lon[0]) return ESP_ERR_INVALID_ARG;
+    // 请求已被取消(离开页面/熄屏)时直接收手：不要为了发不出去的请求清掉旧读数，
+    // 否则一次取消就把 PM2.5 打成 "--"，要等下一轮成功拉取才回来。
+    if (requests_cancelled()) return ESP_FAIL;
     // Do not present an old sample as current when this request fails.
+    home_air_quality_t previous;
     portENTER_CRITICAL(&s_weather_mux);
+    previous = s_air;
     s_air.valid = false;
     s_version++;
     portEXIT_CRITICAL(&s_weather_mux);
@@ -530,6 +535,13 @@ esp_err_t home_air_quality_refresh(const char *lat, const char *lon) {
     s_air_fetching = true;
     const esp_err_t err = fetch_current(url, lat, lon, air_parse);
     s_air_fetching = false;
+    // 失败是因为飞行中被取消(而不是真的拿不到数据)：把上一份读数还回去。
+    if (err != ESP_OK && requests_cancelled()) {
+        portENTER_CRITICAL(&s_weather_mux);
+        s_air = previous;
+        s_version++;
+        portEXIT_CRITICAL(&s_weather_mux);
+    }
     return err;
 }
 

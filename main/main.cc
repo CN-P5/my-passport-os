@@ -9,6 +9,7 @@
 #include "launcher/settings.h"
 #include "launcher/wifi_setup.h"
 #include "launcher/power.h"
+#include "apps/home/app_home.h"
 #include "apps/home/home_profile.h"
 #include "wifi_manager.h"
 #include "ssid_manager.h"
@@ -237,6 +238,16 @@ static void input_task(void *arg) {
     }
 }
 
+// 亮暗翻转后整屏重建首页：sys_mon 栈只有 2.5KB，重建(读 NVS/SPIFFS + 建整屏对象)放这里做。
+static volatile bool s_theme_rebuild_pending = false;
+
+static void theme_rebuild_task(void *arg) {
+    (void)arg;
+    home_ui_rebuild();
+    s_theme_rebuild_pending = false;
+    vTaskDelete(nullptr);
+}
+
 static void system_monitor_task(void *arg) {
     (void)arg;
     unsigned battery_tick = 0;
@@ -251,11 +262,24 @@ static void system_monitor_task(void *arg) {
         }
         wifi_setup_tick();
         settings_tick();
-        // 亮暗自动模式跨过日出/日落：启动器就地重建，其它页面下次进入时生效。
-        if (ui_appearance_tick() && app_registry_get_active() == APP_ID_LAUNCHER &&
-            app_registry_screen_is_on()) {
-            launcher_ui_hide();
-            launcher_ui_show();
+        // 亮暗自动模式跨过日出/日落：前台界面必须整屏重建 —— 各页颜色都在 create_ui()
+        // 里创建期求值，只 invalidate 会让绘制回调按新调色板重画、其余元素留旧色(花屏)。
+        if (ui_appearance_tick()) {
+            const passport_app_id_t active_id = app_registry_get_active();
+            if (app_registry_screen_is_on()) {
+                if (active_id == APP_ID_LAUNCHER) {
+                    launcher_ui_hide();
+                    launcher_ui_show();
+                } else if (active_id == APP_ID_HOME && !s_theme_rebuild_pending) {
+                    // 重建要读 NVS/SPIFFS 并整屏重建对象，栈需求远超 sys_mon 的 2.5KB，
+                    // 交给一次性任务跑，别把 1 秒心跳任务的栈撑爆。
+                    s_theme_rebuild_pending = true;
+                    if (xTaskCreate(theme_rebuild_task, "ui_theme", 6144, nullptr, 2, nullptr) != pdPASS) {
+                        s_theme_rebuild_pending = false;
+                        ESP_LOGW(TAG, "theme rebuild task failed to start");
+                    }
+                }
+            }
         }
 
         const bool scan_idle = app_registry_background_idle();
