@@ -21,6 +21,18 @@
 
 > 这是**个人自用**的改动分支，不承诺稳定性，也不替代上游。想跟进主线请以上游仓库为准。
 
+## 界面预览
+
+实机截图（240×320，亮色模式），由固件内置的串口截图命令 `p` 导出：
+
+| 首页 | 天气 |
+| --- | --- |
+| ![首页](docs/screenshots/home.png) | ![天气](docs/screenshots/weather.png) |
+
+| 城市收音机 | 应用抽屉 |
+| --- | --- |
+| ![城市收音机](docs/screenshots/radio.png) | ![应用抽屉](docs/screenshots/launcher.png) |
+
 ## 代码来源与授权
 
 本仓库是 [**FoloToy AI Passport OS**](https://github.com/manchunx7-bit/passport-os) 的衍生作品，上游以 **MIT** 许可发布。
@@ -30,7 +42,7 @@
 | 上游仓库 | <https://github.com/manchunx7-bit/passport-os> |
 | 本次改动的起点 | `b70879b`（`v0.1.0-8`，rc.56 一线） |
 | 合并的上游版本 | `5101891` — Passport OS 0.2.0-rc.59 |
-| 当前版本号 | `0.2.0-rc.59`（见 `CMakeLists.txt`） |
+| 当前版本号 | `0.2.0-rc.61`（见 `CMakeLists.txt`） |
 | 许可证 | MIT，原始版权声明完整保留于 [`LICENSE`](LICENSE) |
 
 上游版权归 **FoloToy**（`Copyright (c) 2026 FoloToy`）及各位贡献者所有。本仓库在原作基础上修改，同样以 MIT 发布；再分发时请保留 `LICENSE` 中的原始版权声明。
@@ -117,7 +129,7 @@ python tools/verify_firmware.py      # 固件布局 / 首堆预算检查
 也可以把编译放到局域网 Linux 构建机上跑：
 
 ```bash
-POS_HOST=192.168.1.10 POS_PW=<密码> python tools/build-remote.py --fetch ../_work/build
+python tools/build-remote.py --fetch ../_work/build   # 默认用 ssh config 的 pos-build 别名，密钥免密
 ```
 
 详见 [`docs/MAINTENANCE.md`](docs/MAINTENANCE.md) 与 [`docs/remote-build.md`](docs/remote-build.md)。
@@ -158,6 +170,10 @@ tools/            构建、校验与生成脚本（底图、图标、字模、�
 tests/            宿主测试
 docs/             构建与设计文档
 ```
+
+## 相关项目
+
+[**ai-passport-voice-assistant**](https://github.com/CN-P5/ai-passport-voice-assistant) —— 随身语音输入助手：把这块设备当成 PC 的语音输入外设，对着它说话就能在电脑上落字，写长文、口述记录、聊天时都能用，不用再单独准备麦克风。
 
 ## 许可
 

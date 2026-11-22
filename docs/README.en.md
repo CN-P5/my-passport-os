@@ -20,6 +20,18 @@ A personal fork of Passport OS for a small ESP32-C3 device (8 MB flash, no PSRAM
 Changes on top of upstream: light/dark appearance switching, a Weather app, redrawn home-screen artwork and portrait rendering, LAN-direct phone setup, coloured launcher icons, plus the upstream rc.59 voice-control work (Xiaozhi MCP device tools, double-click to talk, face animation) and its new apps.
 
 > This is a personal branch. It does not aim to replace upstream and makes no stability promises — follow the upstream repository for the mainline.
+## Screenshots
+
+Captured on the device (240×320, light appearance) through the firmware's serial screenshot command `p`:
+
+| Home | Weather |
+| --- | --- |
+| ![Home](screenshots/home.png) | ![Weather](screenshots/weather.png) |
+
+| City radio | App drawer |
+| --- | --- |
+| ![City radio](screenshots/radio.png) | ![App drawer](screenshots/launcher.png) |
+
 
 ## Code source and licence
 
@@ -30,7 +42,7 @@ This repository is a **derivative work** of [FoloToy AI Passport OS](https://git
 | Upstream | <https://github.com/manchunx7-bit/passport-os> |
 | Branch point | `b70879b` (`v0.1.0-8`) |
 | Upstream version merged | `5101891` — Passport OS 0.2.0-rc.59 |
-| Version here | `0.2.0-rc.59` |
+| Version here | `0.2.0-rc.61` |
 | Licence | MIT, original copyright notice kept in [`LICENSE`](../LICENSE) |
 
 Upstream copyright belongs to **FoloToy** (`Copyright (c) 2026 FoloToy`) and its contributors. This fork keeps the original notice and is released under the same MIT terms; keep the `LICENSE` file intact when redistributing.
@@ -84,8 +96,14 @@ python -m esptool --chip esp32c3 -p COM5 -b 460800 \
   write_flash --flash_mode dio --flash_size 8MB --flash_freq 80m \
   0x10000 build/passport-os.bin
 ```
+Or use `python tools/flash_app.py` (Windows): it backs up NVS and SPIFFS first — Wi-Fi credentials, settings, portraits — then writes the app partition, and can restore that backup with `--restore`.
+
 
 More detail in [`docs/MAINTENANCE.md`](MAINTENANCE.md) and [`docs/remote-build.md`](remote-build.md).
+
+## Related project
+
+[**ai-passport-voice-assistant**](https://github.com/CN-P5/ai-passport-voice-assistant) — a voice-input assistant that turns this device into a PC microphone: talk to it and text lands on your computer, handy for long-form writing, dictation and chat without an extra mic.
 
 ## Licence
 
